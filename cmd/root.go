@@ -38,6 +38,7 @@ import (
 	"github.com/googleapis/genai-toolbox/internal/prompts"
 	"github.com/googleapis/genai-toolbox/internal/server"
 	"github.com/googleapis/genai-toolbox/internal/sources"
+	"github.com/googleapis/genai-toolbox/internal/storage"
 	"github.com/googleapis/genai-toolbox/internal/telemetry"
 	"github.com/googleapis/genai-toolbox/internal/tools"
 	"github.com/googleapis/genai-toolbox/internal/util"
@@ -313,6 +314,7 @@ type Command struct {
 	tools_file     string
 	tools_files    []string
 	tools_folder   string
+	config_db      string
 	prebuiltConfig string
 	inStream       io.Reader
 	outStream      io.Writer
@@ -362,6 +364,7 @@ func NewCommand(opts ...Option) *Command {
 	flags.StringVar(&cmd.tools_file, "tools-file", "", "File path specifying the tool configuration. Cannot be used with --tools-files, or --tools-folder.")
 	flags.StringSliceVar(&cmd.tools_files, "tools-files", []string{}, "Multiple file paths specifying tool configurations. Files will be merged. Cannot be used with --tools-file, or --tools-folder.")
 	flags.StringVar(&cmd.tools_folder, "tools-folder", "", "Directory path containing YAML tool configuration files. All .yaml and .yml files in the directory will be loaded and merged. Cannot be used with --tools-file, or --tools-files.")
+	flags.StringVar(&cmd.config_db, "config-db", "", "SQLite database path for storing configurations. Defaults to ~/.toolbox/config.db if exists.")
 	flags.Var(&cmd.cfg.LogLevel, "log-level", "Specify the minimum level logged. Allowed: 'DEBUG', 'INFO', 'WARN', 'ERROR'.")
 	flags.Var(&cmd.cfg.LoggingFormat, "logging-format", "Specify logging format to use. Allowed: 'standard' or 'JSON'.")
 	flags.BoolVar(&cmd.cfg.TelemetryGCP, "telemetry-gcp", false, "Enable exporting directly to Google Cloud Monitoring.")
@@ -844,6 +847,37 @@ func run(cmd *Command) error {
 
 	var allToolsFiles []ToolsFile
 
+	// Load configuration from SQLite database (if exists)
+	var dbConfig *storage.ConfigData
+	dbPath := cmd.config_db
+	if dbPath != "" {
+		// Explicit --config-db flag provided
+		var err error
+		dbConfig, err = storage.LoadFromDB(ctx, dbPath)
+		if err != nil {
+			errMsg := fmt.Errorf("unable to load configuration from database at %q: %w", dbPath, err)
+			cmd.logger.ErrorContext(ctx, errMsg.Error())
+			return errMsg
+		}
+		if dbConfig != nil {
+			cmd.logger.InfoContext(ctx, fmt.Sprintf("Loaded configuration from database: %s", dbPath))
+		}
+	} else {
+		// Check if default database exists
+		defaultDBPath, err := storage.DefaultDBPath()
+		if err == nil {
+			exists, _ := storage.Exists(defaultDBPath)
+			if exists {
+				dbConfig, err = storage.LoadFromDB(ctx, defaultDBPath)
+				if err != nil {
+					cmd.logger.WarnContext(ctx, fmt.Sprintf("Unable to load from default database: %s", err))
+				} else if dbConfig != nil {
+					cmd.logger.InfoContext(ctx, fmt.Sprintf("Loaded configuration from default database: %s", defaultDBPath))
+				}
+			}
+		}
+	}
+
 	// Load Prebuilt Configuration
 	if cmd.prebuiltConfig != "" {
 		buf, err := prebuiltconfigs.Get(cmd.prebuiltConfig)
@@ -869,12 +903,17 @@ func run(cmd *Command) error {
 	// Check for explicit custom flags
 	isCustomConfigured := cmd.tools_file != "" || len(cmd.tools_files) > 0 || cmd.tools_folder != ""
 
-	// Determine if default 'tools.yaml' should be used (No prebuilt AND No custom flags)
-	useDefaultToolsFile := cmd.prebuiltConfig == "" && !isCustomConfigured
+	// Determine if default 'tools.yaml' should be used
+	// Only use default if: No prebuilt AND No custom flags AND No database config
+	hasDBConfig := dbConfig != nil && dbConfig.HasAnyConfig()
+	useDefaultToolsFile := cmd.prebuiltConfig == "" && !isCustomConfigured && !hasDBConfig
 
 	if useDefaultToolsFile {
-		cmd.tools_file = "tools.yaml"
-		isCustomConfigured = true
+		// Check if default tools.yaml exists before using it
+		if _, err := os.Stat("tools.yaml"); err == nil {
+			cmd.tools_file = "tools.yaml"
+			isCustomConfigured = true
+		}
 	}
 
 	// Load Custom Configurations
@@ -928,11 +967,61 @@ func run(cmd *Command) error {
 		return err
 	}
 
-	cmd.cfg.SourceConfigs = finalToolsFile.Sources
-	cmd.cfg.AuthServiceConfigs = finalToolsFile.AuthServices
-	cmd.cfg.ToolConfigs = finalToolsFile.Tools
-	cmd.cfg.ToolsetConfigs = finalToolsFile.Toolsets
-	cmd.cfg.PromptConfigs = finalToolsFile.Prompts
+	// Convert YAML configs to storage.ConfigData for merging with DB configs
+	yamlConfig := &storage.ConfigData{
+		SourceConfigs:      make(map[string]sources.SourceConfig),
+		AuthServiceConfigs: make(map[string]auth.AuthServiceConfig),
+		ToolConfigs:        make(map[string]tools.ToolConfig),
+		ToolsetConfigs:     make(map[string]tools.ToolsetConfig),
+		PromptConfigs:      make(map[string]prompts.PromptConfig),
+	}
+	for k, v := range finalToolsFile.Sources {
+		yamlConfig.SourceConfigs[k] = v
+	}
+	for k, v := range finalToolsFile.AuthServices {
+		yamlConfig.AuthServiceConfigs[k] = v
+	}
+	for k, v := range finalToolsFile.Tools {
+		yamlConfig.ToolConfigs[k] = v
+	}
+	for k, v := range finalToolsFile.Toolsets {
+		yamlConfig.ToolsetConfigs[k] = v
+	}
+	for k, v := range finalToolsFile.Prompts {
+		yamlConfig.PromptConfigs[k] = v
+	}
+
+	// Merge: DB config as base, YAML config overrides
+	mergedConfig := storage.MergeConfigs(dbConfig, yamlConfig)
+
+	// Validate that we have at least some configuration
+	if !mergedConfig.HasAnyConfig() && cmd.prebuiltConfig == "" {
+		errMsg := fmt.Errorf("no configuration found: provide --tools-file, --config-db, or ensure ~/.toolbox/config.db or tools.yaml exists")
+		cmd.logger.ErrorContext(ctx, errMsg.Error())
+		return errMsg
+	}
+
+	// Apply merged configuration
+	cmd.cfg.SourceConfigs = make(server.SourceConfigs)
+	for k, v := range mergedConfig.SourceConfigs {
+		cmd.cfg.SourceConfigs[k] = v
+	}
+	cmd.cfg.AuthServiceConfigs = make(server.AuthServiceConfigs)
+	for k, v := range mergedConfig.AuthServiceConfigs {
+		cmd.cfg.AuthServiceConfigs[k] = v
+	}
+	cmd.cfg.ToolConfigs = make(server.ToolConfigs)
+	for k, v := range mergedConfig.ToolConfigs {
+		cmd.cfg.ToolConfigs[k] = v
+	}
+	cmd.cfg.ToolsetConfigs = make(server.ToolsetConfigs)
+	for k, v := range mergedConfig.ToolsetConfigs {
+		cmd.cfg.ToolsetConfigs[k] = v
+	}
+	cmd.cfg.PromptConfigs = make(server.PromptConfigs)
+	for k, v := range mergedConfig.PromptConfigs {
+		cmd.cfg.PromptConfigs[k] = v
+	}
 
 	authSourceConfigs := finalToolsFile.AuthSources
 	if authSourceConfigs != nil {
