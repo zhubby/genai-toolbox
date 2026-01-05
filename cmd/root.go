@@ -847,33 +847,75 @@ func run(cmd *Command) error {
 
 	var allToolsFiles []ToolsFile
 
-	// Load configuration from SQLite database (if exists)
+	// Check if any configuration parameters are provided
+	hasPrebuilt := cmd.prebuiltConfig != ""
+	hasCustomFiles := cmd.tools_file != "" || len(cmd.tools_files) > 0 || cmd.tools_folder != ""
+	hasExplicitDB := cmd.config_db != ""
+	hasAnyConfigParam := hasPrebuilt || hasCustomFiles || hasExplicitDB
+
+	// Load configuration from SQLite database
 	var dbConfig *storage.ConfigData
 	dbPath := cmd.config_db
-	if dbPath != "" {
-		// Explicit --config-db flag provided
+
+	// If no config parameters provided, default to SQLite mode
+	if !hasAnyConfigParam {
+		// Use default database path, create if not exists
 		var err error
-		dbConfig, err = storage.LoadFromDB(ctx, dbPath)
+		dbPath, err = storage.DefaultDBPath()
 		if err != nil {
-			errMsg := fmt.Errorf("unable to load configuration from database at %q: %w", dbPath, err)
+			errMsg := fmt.Errorf("failed to get default database path: %w", err)
 			cmd.logger.ErrorContext(ctx, errMsg.Error())
 			return errMsg
 		}
-		if dbConfig != nil {
-			cmd.logger.InfoContext(ctx, fmt.Sprintf("Loaded configuration from database: %s", dbPath))
-		}
-	} else {
-		// Check if default database exists
-		defaultDBPath, err := storage.DefaultDBPath()
-		if err == nil {
-			exists, _ := storage.Exists(defaultDBPath)
-			if exists {
-				dbConfig, err = storage.LoadFromDB(ctx, defaultDBPath)
-				if err != nil {
-					cmd.logger.WarnContext(ctx, fmt.Sprintf("Unable to load from default database: %s", err))
-				} else if dbConfig != nil {
-					cmd.logger.InfoContext(ctx, fmt.Sprintf("Loaded configuration from default database: %s", defaultDBPath))
+		cmd.logger.InfoContext(ctx, fmt.Sprintf("No configuration parameters provided, using default SQLite database: %s", dbPath))
+	}
+
+	if dbPath != "" {
+		// Load or create database
+		var err error
+		if hasAnyConfigParam {
+			// Explicit --config-db flag or other config provided, only load if exists
+			dbConfig, err = storage.LoadFromDB(ctx, dbPath)
+			if err != nil {
+				errMsg := fmt.Errorf("unable to load configuration from database at %q: %w", dbPath, err)
+				cmd.logger.ErrorContext(ctx, errMsg.Error())
+				return errMsg
+			}
+			if dbConfig != nil {
+				cmd.logger.InfoContext(ctx, fmt.Sprintf("Loaded configuration from database: %s", dbPath))
+			}
+		} else {
+			// No config params, default mode: create database if not exists and load
+			store, err := storage.Open(ctx, dbPath)
+			if err != nil {
+				errMsg := fmt.Errorf("unable to open/create database at %q: %w", dbPath, err)
+				cmd.logger.ErrorContext(ctx, errMsg.Error())
+				return errMsg
+			}
+			defer store.Close()
+
+			// Load configuration from the database (may be empty if newly created)
+			data, err := store.LoadToolsFileData(ctx)
+			if err != nil {
+				errMsg := fmt.Errorf("unable to load configuration from database at %q: %w", dbPath, err)
+				cmd.logger.ErrorContext(ctx, errMsg.Error())
+				return errMsg
+			}
+
+			if data != nil {
+				dbConfig = &storage.ConfigData{
+					SourceConfigs:      data.Sources,
+					AuthServiceConfigs: data.AuthServices,
+					ToolConfigs:        data.Tools,
+					ToolsetConfigs:     data.Toolsets,
+					PromptConfigs:      data.Prompts,
 				}
+			}
+
+			if dbConfig != nil && dbConfig.HasAnyConfig() {
+				cmd.logger.InfoContext(ctx, fmt.Sprintf("Loaded configuration from database: %s", dbPath))
+			} else {
+				cmd.logger.InfoContext(ctx, fmt.Sprintf("Database created/opened at %s (empty configuration)", dbPath))
 			}
 		}
 	}
@@ -903,16 +945,23 @@ func run(cmd *Command) error {
 	// Check for explicit custom flags
 	isCustomConfigured := cmd.tools_file != "" || len(cmd.tools_files) > 0 || cmd.tools_folder != ""
 
-	// Determine if default 'tools.yaml' should be used
-	// Only use default if: No prebuilt AND No custom flags AND No database config
-	hasDBConfig := dbConfig != nil && dbConfig.HasAnyConfig()
-	useDefaultToolsFile := cmd.prebuiltConfig == "" && !isCustomConfigured && !hasDBConfig
+	// If no config parameters provided, we're already in SQLite default mode
+	// Don't check for tools.yaml in this case
+	if !hasAnyConfigParam {
+		// Already handled SQLite default mode above, skip tools.yaml check
+		isCustomConfigured = false
+	} else {
+		// Check if default 'tools.yaml' should be used
+		// Only use default if: No prebuilt AND No custom flags AND No database config
+		hasDBConfig := dbConfig != nil && dbConfig.HasAnyConfig()
+		useDefaultToolsFile := cmd.prebuiltConfig == "" && !isCustomConfigured && !hasDBConfig
 
-	if useDefaultToolsFile {
-		// Check if default tools.yaml exists before using it
-		if _, err := os.Stat("tools.yaml"); err == nil {
-			cmd.tools_file = "tools.yaml"
-			isCustomConfigured = true
+		if useDefaultToolsFile {
+			// Check if default tools.yaml exists before using it
+			if _, err := os.Stat("tools.yaml"); err == nil {
+				cmd.tools_file = "tools.yaml"
+				isCustomConfigured = true
+			}
 		}
 	}
 
@@ -995,7 +1044,24 @@ func run(cmd *Command) error {
 	mergedConfig := storage.MergeConfigs(dbConfig, yamlConfig)
 
 	// Validate that we have at least some configuration
-	if !mergedConfig.HasAnyConfig() && cmd.prebuiltConfig == "" {
+	// If no config parameters provided, allow empty database (default SQLite mode)
+	// Otherwise, require at least some configuration
+	if !hasAnyConfigParam {
+		// Default SQLite mode: allow empty database, user can add config later
+		if mergedConfig == nil {
+			mergedConfig = &storage.ConfigData{
+				SourceConfigs:      make(map[string]sources.SourceConfig),
+				AuthServiceConfigs: make(map[string]auth.AuthServiceConfig),
+				ToolConfigs:        make(map[string]tools.ToolConfig),
+				ToolsetConfigs:     make(map[string]tools.ToolsetConfig),
+				PromptConfigs:      make(map[string]prompts.PromptConfig),
+			}
+		}
+		if !mergedConfig.HasAnyConfig() {
+			cmd.logger.InfoContext(ctx, "Starting with empty configuration. Add configurations to the database or use --tools-file to load from YAML.")
+		}
+	} else if mergedConfig == nil || (!mergedConfig.HasAnyConfig() && cmd.prebuiltConfig == "") {
+		// Config parameters provided but no actual config found
 		errMsg := fmt.Errorf("no configuration found: provide --tools-file, --config-db, or ensure ~/.toolbox/config.db or tools.yaml exists")
 		cmd.logger.ErrorContext(ctx, errMsg.Error())
 		return errMsg
