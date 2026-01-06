@@ -23,7 +23,7 @@ CREATE INDEX idx_users_username ON users(username);
 `
 
   return (
-    <div className="flex flex-col h-full bg-muted/5">
+    <div className="flex flex-col h-full bg-muted/5 min-w-0">
        <div className="p-3 border-b font-medium text-sm flex items-center justify-between">
           <span>Table: public.users</span>
        </div>
@@ -35,21 +35,24 @@ CREATE INDEX idx_users_username ON users(username);
                 <TabsTrigger value="indexes" className="flex-1">Indexes</TabsTrigger>
             </TabsList>
           </div>
-          <TabsContent value="ddl" className="flex-1 min-h-0 mt-0 p-0 border-t mt-2">
-             <Editor
-                height="100%"
-                defaultLanguage="sql"
-                value={ddl}
-                theme="vs-light"
-                options={{
-                    minimap: { enabled: false },
-                    fontSize: 12,
-                    lineNumbers: "off",
-                    readOnly: true,
-                    scrollBeyondLastLine: false,
-                    automaticLayout: true,
-                }}
-             />
+          <TabsContent value="ddl" className="flex-1 min-h-0 mt-2 p-0 border-t relative overflow-hidden">
+             <div className="absolute inset-0">
+                <Editor
+                    height="100%"
+                    width="100%"
+                    defaultLanguage="sql"
+                    value={ddl}
+                    theme="vs-light"
+                    options={{
+                        minimap: { enabled: false },
+                        fontSize: 12,
+                        lineNumbers: "off",
+                        readOnly: true,
+                        scrollBeyondLastLine: false,
+                        automaticLayout: false,
+                    }}
+                />
+             </div>
           </TabsContent>
           <TabsContent value="info" className="p-4 text-sm text-muted-foreground">
              Table information placeholder.

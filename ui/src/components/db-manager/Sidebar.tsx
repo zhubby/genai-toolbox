@@ -56,7 +56,7 @@ export function Sidebar({ className, ...props }: SidebarProps) {
   };
 
   return (
-    <div className={cn("flex flex-col h-full border-r bg-background", className)} {...props}>
+    <div className={cn("flex flex-col h-full border-r bg-background min-w-0", className)} {...props}>
       <div className="p-4 space-y-4">
         <div className="flex items-center justify-between">
            <h2 className="text-sm font-semibold tracking-tight uppercase text-muted-foreground">Explorer</h2>

@@ -82,7 +82,7 @@ export function SqlEditor({ className }: SqlEditorProps) {
                 roundedSelection: true,
                 scrollBeyondLastLine: false,
                 readOnly: false,
-                automaticLayout: true,
+                automaticLayout: false,
                 padding: { top: 16, bottom: 16 },
                 renderLineHighlight: 'all',
             }}
