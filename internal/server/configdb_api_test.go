@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -26,7 +25,6 @@ func TestConfigDBSourceCRUD(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 	dbPath := filepath.Join(tmpDir, "config.db")
-	dbPathEsc := url.QueryEscape(dbPath)
 
 	testLogger, err := log.NewStdLogger(os.Stdout, os.Stderr, "info")
 	if err != nil {
@@ -52,6 +50,7 @@ func TestConfigDBSourceCRUD(t *testing.T) {
 		instrumentation: instrumentation,
 		sseManager:      newSseManager(ctx),
 		ResourceMgr:     resources.NewResourceManager(nil, nil, nil, nil, nil, nil),
+		configDBPath:    dbPath,
 	}
 
 	r, err := apiRouter(&server)
@@ -63,7 +62,7 @@ func TestConfigDBSourceCRUD(t *testing.T) {
 
 	// Validate DB path before any CRUD
 	{
-		resp, body, err := runRequest(ts, http.MethodPost, "/config/validate?dbPath="+dbPathEsc, nil, nil)
+		resp, body, err := runRequest(ts, http.MethodPost, "/config/validate", nil, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -81,7 +80,7 @@ func TestConfigDBSourceCRUD(t *testing.T) {
 
 	// 初始 list：db 不存在时返回空列表
 	{
-		resp, body, err := runRequest(ts, http.MethodGet, "/config/sources?dbPath="+dbPathEsc, nil, nil)
+		resp, body, err := runRequest(ts, http.MethodGet, "/config/sources", nil, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -109,7 +108,7 @@ func TestConfigDBSourceCRUD(t *testing.T) {
 				"database": "testdb",
 			},
 		})
-		resp, body, err := runRequest(ts, http.MethodPost, "/config/sources?dbPath="+dbPathEsc, bytes.NewReader(reqBody), nil)
+		resp, body, err := runRequest(ts, http.MethodPost, "/config/sources", bytes.NewReader(reqBody), nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -121,7 +120,7 @@ func TestConfigDBSourceCRUD(t *testing.T) {
 	// Conflict create same
 	{
 		reqBody, _ := json.Marshal(configdb.CreateSourceRequest{Name: "db1", Kind: "postgres", Config: map[string]any{}})
-		resp, _, err := runRequest(ts, http.MethodPost, "/config/sources?dbPath="+dbPathEsc, bytes.NewReader(reqBody), nil)
+		resp, _, err := runRequest(ts, http.MethodPost, "/config/sources", bytes.NewReader(reqBody), nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -132,7 +131,7 @@ func TestConfigDBSourceCRUD(t *testing.T) {
 
 	// Get
 	{
-		resp, body, err := runRequest(ts, http.MethodGet, "/config/sources/db1?dbPath="+dbPathEsc, nil, nil)
+		resp, body, err := runRequest(ts, http.MethodGet, "/config/sources/db1", nil, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -158,7 +157,7 @@ func TestConfigDBSourceCRUD(t *testing.T) {
 				"port": 5432,
 			},
 		})
-		resp, body, err := runRequest(ts, http.MethodPut, "/config/sources/db1?dbPath="+dbPathEsc, bytes.NewReader(reqBody), nil)
+		resp, body, err := runRequest(ts, http.MethodPut, "/config/sources/db1", bytes.NewReader(reqBody), nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -169,7 +168,7 @@ func TestConfigDBSourceCRUD(t *testing.T) {
 
 	// Delete
 	{
-		resp, _, err := runRequest(ts, http.MethodDelete, "/config/sources/db1?dbPath="+dbPathEsc, nil, nil)
+		resp, _, err := runRequest(ts, http.MethodDelete, "/config/sources/db1", nil, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -180,7 +179,7 @@ func TestConfigDBSourceCRUD(t *testing.T) {
 
 	// Get after delete -> 404
 	{
-		resp, _, err := runRequest(ts, http.MethodGet, "/config/sources/db1?dbPath="+dbPathEsc, nil, nil)
+		resp, _, err := runRequest(ts, http.MethodGet, "/config/sources/db1", nil, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

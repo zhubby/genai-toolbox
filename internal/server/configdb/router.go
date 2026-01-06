@@ -100,14 +100,13 @@ func validateDBHandler(deps Dependencies, w http.ResponseWriter, r *http.Request
 	ctx, span := deps.Tracer.Start(r.Context(), "toolbox/server/configdb/validate")
 	defer span.End()
 
-	dbPath := dbPathFromRequest(r)
-	store, err := openForWrite(ctx, dbPath)
+	dbPath := deps.DBPath
+	_, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		// 这里不直接返回 4xx/5xx；按约定返回可用性布尔值与错误信息。
 		render.JSON(w, r, ValidateDBResponse{Available: false, Error: fmt.Sprintf("%v", err)})
 		return
 	}
-	_ = store.Close()
 	render.JSON(w, r, ValidateDBResponse{Available: true})
 }

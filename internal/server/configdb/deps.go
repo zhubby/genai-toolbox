@@ -10,4 +10,6 @@ import (
 type Dependencies struct {
 	Logger log.Logger
 	Tracer trace.Tracer
+	// DBPath is the default SQLite config DB path used by configdb handlers.
+	DBPath string
 }

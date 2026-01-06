@@ -14,7 +14,7 @@ func listPromptsHandler(deps Dependencies, w http.ResponseWriter, r *http.Reques
 	ctx, span := deps.Tracer.Start(r.Context(), "toolbox/server/configdb/prompt/list")
 	defer span.End()
 
-	dbPath := dbPathFromRequest(r)
+	dbPath := deps.DBPath
 	store, ok, err := openForRead(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
@@ -25,7 +25,6 @@ func listPromptsHandler(deps Dependencies, w http.ResponseWriter, r *http.Reques
 		render.JSON(w, r, []PromptDTO{})
 		return
 	}
-	defer store.Close()
 
 	rows, err := store.ListPrompts(ctx)
 	if err != nil {
@@ -53,7 +52,7 @@ func getPromptHandler(deps Dependencies, w http.ResponseWriter, r *http.Request)
 	name := chi.URLParam(r, "name")
 	span.SetAttributes(attribute.String("prompt_name", name))
 
-	dbPath := dbPathFromRequest(r)
+	dbPath := deps.DBPath
 	store, ok, err := openForRead(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
@@ -66,7 +65,6 @@ func getPromptHandler(deps Dependencies, w http.ResponseWriter, r *http.Request)
 		_ = render.Render(w, r, newErrResponse(err, http.StatusNotFound))
 		return
 	}
-	defer store.Close()
 
 	row, err := store.GetPrompt(ctx, name)
 	if err != nil {
@@ -105,15 +103,16 @@ func createPromptHandler(deps Dependencies, w http.ResponseWriter, r *http.Reque
 		writeError(deps, w, r, fmt.Errorf("%w: %v", errBadRequest, err))
 		return
 	}
+	// Persist kind into config JSON to keep DB data self-contained.
+	cfg["kind"] = req.Kind
 
-	dbPath := dbPathFromRequest(r)
+	dbPath := deps.DBPath
 	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		writeError(deps, w, r, err)
 		return
 	}
-	defer store.Close()
 
 	row, err := store.CreatePrompt(ctx, req.Name, req.Kind, cfg)
 	if err != nil {
@@ -156,15 +155,16 @@ func updatePromptHandler(deps Dependencies, w http.ResponseWriter, r *http.Reque
 		writeError(deps, w, r, fmt.Errorf("%w: %v", errBadRequest, err))
 		return
 	}
+	// Persist kind into config JSON to keep DB data self-contained.
+	cfg["kind"] = req.Kind
 
-	dbPath := dbPathFromRequest(r)
+	dbPath := deps.DBPath
 	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		writeError(deps, w, r, err)
 		return
 	}
-	defer store.Close()
 
 	row, err := store.UpdatePrompt(ctx, name, req.Kind, cfg)
 	if err != nil {
@@ -188,14 +188,13 @@ func deletePromptHandler(deps Dependencies, w http.ResponseWriter, r *http.Reque
 	name := chi.URLParam(r, "name")
 	span.SetAttributes(attribute.String("prompt_name", name))
 
-	dbPath := dbPathFromRequest(r)
+	dbPath := deps.DBPath
 	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		writeError(deps, w, r, err)
 		return
 	}
-	defer store.Close()
 
 	if err := store.DeletePrompt(ctx, name); err != nil {
 		span.SetStatus(codes.Error, err.Error())

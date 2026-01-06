@@ -14,7 +14,7 @@ func listSourcesHandler(deps Dependencies, w http.ResponseWriter, r *http.Reques
 	ctx, span := deps.Tracer.Start(r.Context(), "toolbox/server/configdb/source/list")
 	defer span.End()
 
-	dbPath := dbPathFromRequest(r)
+	dbPath := deps.DBPath
 	store, ok, err := openForRead(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
@@ -25,7 +25,6 @@ func listSourcesHandler(deps Dependencies, w http.ResponseWriter, r *http.Reques
 		render.JSON(w, r, []SourceDTO{})
 		return
 	}
-	defer store.Close()
 
 	rows, err := store.ListSources(ctx)
 	if err != nil {
@@ -53,7 +52,7 @@ func getSourceHandler(deps Dependencies, w http.ResponseWriter, r *http.Request)
 	name := chi.URLParam(r, "name")
 	span.SetAttributes(attribute.String("source_name", name))
 
-	dbPath := dbPathFromRequest(r)
+	dbPath := deps.DBPath
 	store, ok, err := openForRead(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
@@ -66,7 +65,6 @@ func getSourceHandler(deps Dependencies, w http.ResponseWriter, r *http.Request)
 		_ = render.Render(w, r, newErrResponse(err, http.StatusNotFound))
 		return
 	}
-	defer store.Close()
 
 	row, err := store.GetSource(ctx, name)
 	if err != nil {
@@ -105,15 +103,17 @@ func createSourceHandler(deps Dependencies, w http.ResponseWriter, r *http.Reque
 		writeError(deps, w, r, fmt.Errorf("%w: %v", errBadRequest, err))
 		return
 	}
+	// Persist kind into config JSON to keep DB data self-contained.
+	// Many source configs require `kind` field in the payload.
+	cfg["kind"] = req.Kind
 
-	dbPath := dbPathFromRequest(r)
+	dbPath := deps.DBPath
 	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		writeError(deps, w, r, err)
 		return
 	}
-	defer store.Close()
 
 	row, err := store.CreateSource(ctx, req.Name, req.Kind, cfg)
 	if err != nil {
@@ -157,15 +157,16 @@ func updateSourceHandler(deps Dependencies, w http.ResponseWriter, r *http.Reque
 		writeError(deps, w, r, fmt.Errorf("%w: %v", errBadRequest, err))
 		return
 	}
+	// Persist kind into config JSON to keep DB data self-contained.
+	cfg["kind"] = req.Kind
 
-	dbPath := dbPathFromRequest(r)
+	dbPath := deps.DBPath
 	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		writeError(deps, w, r, err)
 		return
 	}
-	defer store.Close()
 
 	row, err := store.UpdateSource(ctx, name, req.Kind, cfg)
 	if err != nil {
@@ -189,14 +190,13 @@ func deleteSourceHandler(deps Dependencies, w http.ResponseWriter, r *http.Reque
 	name := chi.URLParam(r, "name")
 	span.SetAttributes(attribute.String("source_name", name))
 
-	dbPath := dbPathFromRequest(r)
+	dbPath := deps.DBPath
 	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		writeError(deps, w, r, err)
 		return
 	}
-	defer store.Close()
 
 	if err := store.DeleteSource(ctx, name); err != nil {
 		span.SetStatus(codes.Error, err.Error())

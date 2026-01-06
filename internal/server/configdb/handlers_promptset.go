@@ -14,7 +14,7 @@ func listPromptsetsHandler(deps Dependencies, w http.ResponseWriter, r *http.Req
 	ctx, span := deps.Tracer.Start(r.Context(), "toolbox/server/configdb/promptset/list")
 	defer span.End()
 
-	dbPath := dbPathFromRequest(r)
+	dbPath := deps.DBPath
 	store, ok, err := openForRead(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
@@ -25,7 +25,6 @@ func listPromptsetsHandler(deps Dependencies, w http.ResponseWriter, r *http.Req
 		render.JSON(w, r, []PromptsetDTO{})
 		return
 	}
-	defer store.Close()
 
 	rows, err := store.ListPromptsets(ctx)
 	if err != nil {
@@ -52,7 +51,7 @@ func getPromptsetHandler(deps Dependencies, w http.ResponseWriter, r *http.Reque
 	name := chi.URLParam(r, "name")
 	span.SetAttributes(attribute.String("promptset_name", name))
 
-	dbPath := dbPathFromRequest(r)
+	dbPath := deps.DBPath
 	store, ok, err := openForRead(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
@@ -65,7 +64,6 @@ func getPromptsetHandler(deps Dependencies, w http.ResponseWriter, r *http.Reque
 		_ = render.Render(w, r, newErrResponse(err, http.StatusNotFound))
 		return
 	}
-	defer store.Close()
 
 	row, err := store.GetPromptset(ctx, name)
 	if err != nil {
@@ -98,14 +96,13 @@ func createPromptsetHandler(deps Dependencies, w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	dbPath := dbPathFromRequest(r)
+	dbPath := deps.DBPath
 	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		writeError(deps, w, r, err)
 		return
 	}
-	defer store.Close()
 
 	row, err := store.CreatePromptset(ctx, req.Name, req.PromptNames)
 	if err != nil {
@@ -136,14 +133,13 @@ func updatePromptsetHandler(deps Dependencies, w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	dbPath := dbPathFromRequest(r)
+	dbPath := deps.DBPath
 	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		writeError(deps, w, r, err)
 		return
 	}
-	defer store.Close()
 
 	row, err := store.UpdatePromptset(ctx, name, req.PromptNames)
 	if err != nil {
@@ -166,14 +162,13 @@ func deletePromptsetHandler(deps Dependencies, w http.ResponseWriter, r *http.Re
 	name := chi.URLParam(r, "name")
 	span.SetAttributes(attribute.String("promptset_name", name))
 
-	dbPath := dbPathFromRequest(r)
+	dbPath := deps.DBPath
 	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		writeError(deps, w, r, err)
 		return
 	}
-	defer store.Close()
 
 	if err := store.DeletePromptset(ctx, name); err != nil {
 		span.SetStatus(codes.Error, err.Error())

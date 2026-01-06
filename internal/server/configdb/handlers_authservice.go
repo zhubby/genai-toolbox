@@ -14,7 +14,7 @@ func listAuthServicesHandler(deps Dependencies, w http.ResponseWriter, r *http.R
 	ctx, span := deps.Tracer.Start(r.Context(), "toolbox/server/configdb/authservice/list")
 	defer span.End()
 
-	dbPath := dbPathFromRequest(r)
+	dbPath := deps.DBPath
 	store, ok, err := openForRead(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
@@ -25,7 +25,6 @@ func listAuthServicesHandler(deps Dependencies, w http.ResponseWriter, r *http.R
 		render.JSON(w, r, []AuthServiceDTO{})
 		return
 	}
-	defer store.Close()
 
 	rows, err := store.ListAuthServices(ctx)
 	if err != nil {
@@ -53,7 +52,7 @@ func getAuthServiceHandler(deps Dependencies, w http.ResponseWriter, r *http.Req
 	name := chi.URLParam(r, "name")
 	span.SetAttributes(attribute.String("authservice_name", name))
 
-	dbPath := dbPathFromRequest(r)
+	dbPath := deps.DBPath
 	store, ok, err := openForRead(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
@@ -66,7 +65,6 @@ func getAuthServiceHandler(deps Dependencies, w http.ResponseWriter, r *http.Req
 		_ = render.Render(w, r, newErrResponse(err, http.StatusNotFound))
 		return
 	}
-	defer store.Close()
 
 	row, err := store.GetAuthService(ctx, name)
 	if err != nil {
@@ -105,15 +103,16 @@ func createAuthServiceHandler(deps Dependencies, w http.ResponseWriter, r *http.
 		writeError(deps, w, r, fmt.Errorf("%w: %v", errBadRequest, err))
 		return
 	}
+	// Persist kind into config JSON to keep DB data self-contained.
+	cfg["kind"] = req.Kind
 
-	dbPath := dbPathFromRequest(r)
+	dbPath := deps.DBPath
 	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		writeError(deps, w, r, err)
 		return
 	}
-	defer store.Close()
 
 	row, err := store.CreateAuthService(ctx, req.Name, req.Kind, cfg)
 	if err != nil {
@@ -156,15 +155,16 @@ func updateAuthServiceHandler(deps Dependencies, w http.ResponseWriter, r *http.
 		writeError(deps, w, r, fmt.Errorf("%w: %v", errBadRequest, err))
 		return
 	}
+	// Persist kind into config JSON to keep DB data self-contained.
+	cfg["kind"] = req.Kind
 
-	dbPath := dbPathFromRequest(r)
+	dbPath := deps.DBPath
 	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		writeError(deps, w, r, err)
 		return
 	}
-	defer store.Close()
 
 	row, err := store.UpdateAuthService(ctx, name, req.Kind, cfg)
 	if err != nil {
@@ -188,14 +188,13 @@ func deleteAuthServiceHandler(deps Dependencies, w http.ResponseWriter, r *http.
 	name := chi.URLParam(r, "name")
 	span.SetAttributes(attribute.String("authservice_name", name))
 
-	dbPath := dbPathFromRequest(r)
+	dbPath := deps.DBPath
 	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		writeError(deps, w, r, err)
 		return
 	}
-	defer store.Close()
 
 	if err := store.DeleteAuthService(ctx, name); err != nil {
 		span.SetStatus(codes.Error, err.Error())

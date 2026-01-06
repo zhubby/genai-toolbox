@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
@@ -29,6 +30,11 @@ import (
 	// Import SQLite driver (pure Go implementation)
 	_ "modernc.org/sqlite"
 )
+
+// ent schema migration (client.Schema.Create) is not safe to run concurrently.
+// Since Toolbox may open the config DB from multiple HTTP requests at once,
+// we serialize migrations to prevent "concurrent map writes" panics.
+var schemaCreateMu sync.Mutex
 
 // Store provides an interface for configuration storage operations.
 type Store struct {
@@ -82,7 +88,10 @@ func Open(ctx context.Context, dbPath string) (*Store, error) {
 
 	// Run auto migration to create/update schema
 	// Use WithForeignKeys(false) to skip the foreign key check during migration
-	if err := client.Schema.Create(ctx); err != nil {
+	schemaCreateMu.Lock()
+	err = client.Schema.Create(ctx)
+	schemaCreateMu.Unlock()
+	if err != nil {
 		client.Close()
 		return nil, fmt.Errorf("failed to create schema: %w", err)
 	}
@@ -149,4 +158,3 @@ func (s *Store) IsEmpty(ctx context.Context) (bool, error) {
 
 	return sourceCount == 0 && toolCount == 0 && promptCount == 0, nil
 }
-

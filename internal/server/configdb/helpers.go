@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 
 	"github.com/go-chi/render"
 	"github.com/googleapis/genai-toolbox/internal/storage"
@@ -12,15 +13,48 @@ import (
 	"github.com/googleapis/genai-toolbox/internal/util"
 )
 
-func dbPathFromRequest(r *http.Request) string {
-	if r == nil {
-		return ""
+var (
+	storeMu     sync.Mutex
+	storeByPath = map[string]*storage.Store{}
+)
+
+func canonicalDBPath(dbPath string) string {
+	if dbPath != "" {
+		return dbPath
 	}
-	if v := r.URL.Query().Get("dbPath"); v != "" {
-		return v
+	// best-effort: match storage.Open default behavior for stable cache key
+	if p, err := storage.DefaultDBPath(); err == nil {
+		return p
 	}
-	// 兼容常见 snake_case 传参
-	return r.URL.Query().Get("db_path")
+	return dbPath
+}
+
+func getOrOpenStore(ctx context.Context, dbPath string) (*storage.Store, error) {
+	key := canonicalDBPath(dbPath)
+	storeMu.Lock()
+	if s := storeByPath[key]; s != nil {
+		storeMu.Unlock()
+		return s, nil
+	}
+	storeMu.Unlock()
+
+	// Open may create the DB and run schema migration. It is safe to call concurrently
+	// because storage.Open serializes schema migration. We still cache the resulting store.
+	s, err := storage.Open(ctx, dbPath)
+	if err != nil {
+		return nil, err
+	}
+
+	storeMu.Lock()
+	// If another goroutine populated the cache meanwhile, keep the first one and close ours.
+	if existing := storeByPath[key]; existing != nil {
+		storeMu.Unlock()
+		_ = s.Close()
+		return existing, nil
+	}
+	storeByPath[key] = s
+	storeMu.Unlock()
+	return s, nil
 }
 
 func openForRead(ctx context.Context, dbPath string) (*storage.Store, bool, error) {
@@ -31,7 +65,7 @@ func openForRead(ctx context.Context, dbPath string) (*storage.Store, bool, erro
 	if !exists {
 		return nil, false, nil
 	}
-	store, err := storage.Open(ctx, dbPath)
+	store, err := getOrOpenStore(ctx, dbPath)
 	if err != nil {
 		return nil, false, err
 	}
@@ -39,7 +73,7 @@ func openForRead(ctx context.Context, dbPath string) (*storage.Store, bool, erro
 }
 
 func openForWrite(ctx context.Context, dbPath string) (*storage.Store, error) {
-	return storage.Open(ctx, dbPath)
+	return getOrOpenStore(ctx, dbPath)
 }
 
 func decodeJSON(r *http.Request, v any) error {

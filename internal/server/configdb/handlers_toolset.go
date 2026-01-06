@@ -14,7 +14,7 @@ func listToolsetsHandler(deps Dependencies, w http.ResponseWriter, r *http.Reque
 	ctx, span := deps.Tracer.Start(r.Context(), "toolbox/server/configdb/toolset/list")
 	defer span.End()
 
-	dbPath := dbPathFromRequest(r)
+	dbPath := deps.DBPath
 	store, ok, err := openForRead(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
@@ -25,7 +25,6 @@ func listToolsetsHandler(deps Dependencies, w http.ResponseWriter, r *http.Reque
 		render.JSON(w, r, []ToolsetDTO{})
 		return
 	}
-	defer store.Close()
 
 	rows, err := store.ListToolsets(ctx)
 	if err != nil {
@@ -52,7 +51,7 @@ func getToolsetHandler(deps Dependencies, w http.ResponseWriter, r *http.Request
 	name := chi.URLParam(r, "name")
 	span.SetAttributes(attribute.String("toolset_name", name))
 
-	dbPath := dbPathFromRequest(r)
+	dbPath := deps.DBPath
 	store, ok, err := openForRead(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
@@ -65,7 +64,6 @@ func getToolsetHandler(deps Dependencies, w http.ResponseWriter, r *http.Request
 		_ = render.Render(w, r, newErrResponse(err, http.StatusNotFound))
 		return
 	}
-	defer store.Close()
 
 	row, err := store.GetToolset(ctx, name)
 	if err != nil {
@@ -98,14 +96,13 @@ func createToolsetHandler(deps Dependencies, w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	dbPath := dbPathFromRequest(r)
+	dbPath := deps.DBPath
 	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		writeError(deps, w, r, err)
 		return
 	}
-	defer store.Close()
 
 	row, err := store.CreateToolset(ctx, req.Name, req.ToolNames)
 	if err != nil {
@@ -136,14 +133,13 @@ func updateToolsetHandler(deps Dependencies, w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	dbPath := dbPathFromRequest(r)
+	dbPath := deps.DBPath
 	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		writeError(deps, w, r, err)
 		return
 	}
-	defer store.Close()
 
 	row, err := store.UpdateToolset(ctx, name, req.ToolNames)
 	if err != nil {
@@ -166,14 +162,13 @@ func deleteToolsetHandler(deps Dependencies, w http.ResponseWriter, r *http.Requ
 	name := chi.URLParam(r, "name")
 	span.SetAttributes(attribute.String("toolset_name", name))
 
-	dbPath := dbPathFromRequest(r)
+	dbPath := deps.DBPath
 	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		writeError(deps, w, r, err)
 		return
 	}
-	defer store.Close()
 
 	if err := store.DeleteToolset(ctx, name); err != nil {
 		span.SetStatus(codes.Error, err.Error())

@@ -43,6 +43,7 @@ func apiRouter(s *Server) (chi.Router, error) {
 	r.Mount("/config", configdb.Router(configdb.Dependencies{
 		Logger: s.logger,
 		Tracer: s.instrumentation.Tracer,
+		DBPath: s.configDBPath,
 	}))
 
 	r.Get("/toolset", func(w http.ResponseWriter, r *http.Request) { toolsetHandler(s, w, r) })

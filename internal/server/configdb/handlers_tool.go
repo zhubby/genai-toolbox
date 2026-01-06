@@ -14,7 +14,7 @@ func listToolsHandler(deps Dependencies, w http.ResponseWriter, r *http.Request)
 	ctx, span := deps.Tracer.Start(r.Context(), "toolbox/server/configdb/tool/list")
 	defer span.End()
 
-	dbPath := dbPathFromRequest(r)
+	dbPath := deps.DBPath
 	store, ok, err := openForRead(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
@@ -25,7 +25,6 @@ func listToolsHandler(deps Dependencies, w http.ResponseWriter, r *http.Request)
 		render.JSON(w, r, []ToolDTO{})
 		return
 	}
-	defer store.Close()
 
 	rows, err := store.ListTools(ctx)
 	if err != nil {
@@ -54,7 +53,7 @@ func getToolHandler(deps Dependencies, w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	span.SetAttributes(attribute.String("tool_name", name))
 
-	dbPath := dbPathFromRequest(r)
+	dbPath := deps.DBPath
 	store, ok, err := openForRead(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
@@ -67,7 +66,6 @@ func getToolHandler(deps Dependencies, w http.ResponseWriter, r *http.Request) {
 		_ = render.Render(w, r, newErrResponse(err, http.StatusNotFound))
 		return
 	}
-	defer store.Close()
 
 	row, err := store.GetTool(ctx, name)
 	if err != nil {
@@ -107,15 +105,16 @@ func createToolHandler(deps Dependencies, w http.ResponseWriter, r *http.Request
 		writeError(deps, w, r, fmt.Errorf("%w: %v", errBadRequest, err))
 		return
 	}
+	// Persist kind into config JSON to keep DB data self-contained.
+	cfg["kind"] = req.Kind
 
-	dbPath := dbPathFromRequest(r)
+	dbPath := deps.DBPath
 	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		writeError(deps, w, r, err)
 		return
 	}
-	defer store.Close()
 
 	row, err := store.CreateTool(ctx, req.Name, req.Kind, req.SourceName, cfg)
 	if err != nil {
@@ -159,15 +158,16 @@ func updateToolHandler(deps Dependencies, w http.ResponseWriter, r *http.Request
 		writeError(deps, w, r, fmt.Errorf("%w: %v", errBadRequest, err))
 		return
 	}
+	// Persist kind into config JSON to keep DB data self-contained.
+	cfg["kind"] = req.Kind
 
-	dbPath := dbPathFromRequest(r)
+	dbPath := deps.DBPath
 	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		writeError(deps, w, r, err)
 		return
 	}
-	defer store.Close()
 
 	row, err := store.UpdateTool(ctx, name, req.Kind, req.SourceName, cfg)
 	if err != nil {
@@ -192,14 +192,13 @@ func deleteToolHandler(deps Dependencies, w http.ResponseWriter, r *http.Request
 	name := chi.URLParam(r, "name")
 	span.SetAttributes(attribute.String("tool_name", name))
 
-	dbPath := dbPathFromRequest(r)
+	dbPath := deps.DBPath
 	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		writeError(deps, w, r, err)
 		return
 	}
-	defer store.Close()
 
 	if err := store.DeleteTool(ctx, name); err != nil {
 		span.SetStatus(codes.Error, err.Error())

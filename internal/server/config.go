@@ -46,6 +46,9 @@ type ServerConfig struct {
 	PromptConfigs PromptConfigs
 	// PromptsetConfigs defines what prompts are available
 	PromptsetConfigs PromptsetConfigs
+	// ConfigDBPath is the resolved SQLite config DB path (typically from --config-db).
+	// Used by the control-plane APIs (/api/config) as the default when requests don't pass ?dbPath=.
+	ConfigDBPath string
 	// LoggingFormat defines whether structured loggings are used.
 	LoggingFormat logFormat
 	// LogLevel defines the levels to log.

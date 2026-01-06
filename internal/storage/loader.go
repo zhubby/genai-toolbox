@@ -85,7 +85,11 @@ func (s *Store) loadSources(ctx context.Context, data *ToolsFileData) error {
 	for _, src := range sources_ {
 		config, err := decodeSourceConfig(ctx, src)
 		if err != nil {
-			return fmt.Errorf("failed to decode source %q: %w", src.ID, err)
+			// Do not block server startup on bad records. Log and skip.
+			if l, lerr := util.LoggerFromContext(ctx); lerr == nil {
+				l.WarnContext(ctx, fmt.Sprintf("Skipping invalid source %q from config DB: %v", src.ID, err))
+			}
+			continue
 		}
 		data.Sources[src.ID] = config
 	}
@@ -101,7 +105,11 @@ func (s *Store) loadAuthServices(ctx context.Context, data *ToolsFileData) error
 	for _, as := range authServices {
 		config, err := decodeAuthServiceConfig(ctx, as)
 		if err != nil {
-			return fmt.Errorf("failed to decode auth service %q: %w", as.ID, err)
+			// Do not block server startup on bad records. Log and skip.
+			if l, lerr := util.LoggerFromContext(ctx); lerr == nil {
+				l.WarnContext(ctx, fmt.Sprintf("Skipping invalid auth service %q from config DB: %v", as.ID, err))
+			}
+			continue
 		}
 		data.AuthServices[as.ID] = config
 	}
@@ -117,7 +125,11 @@ func (s *Store) loadTools(ctx context.Context, data *ToolsFileData) error {
 	for _, t := range tools_ {
 		config, err := decodeToolConfig(ctx, t)
 		if err != nil {
-			return fmt.Errorf("failed to decode tool %q: %w", t.ID, err)
+			// Do not block server startup on bad records. Log and skip.
+			if l, lerr := util.LoggerFromContext(ctx); lerr == nil {
+				l.WarnContext(ctx, fmt.Sprintf("Skipping invalid tool %q from config DB: %v", t.ID, err))
+			}
+			continue
 		}
 		data.Tools[t.ID] = config
 	}
@@ -148,7 +160,11 @@ func (s *Store) loadPrompts(ctx context.Context, data *ToolsFileData) error {
 	for _, p := range prompts_ {
 		config, err := decodePromptConfig(ctx, p)
 		if err != nil {
-			return fmt.Errorf("failed to decode prompt %q: %w", p.ID, err)
+			// Do not block server startup on bad records. Log and skip.
+			if l, lerr := util.LoggerFromContext(ctx); lerr == nil {
+				l.WarnContext(ctx, fmt.Sprintf("Skipping invalid prompt %q from config DB: %v", p.ID, err))
+			}
+			continue
 		}
 		data.Prompts[p.ID] = config
 	}
@@ -327,4 +343,3 @@ func (s *Store) SavePromptset(ctx context.Context, name string, promptNames []st
 		SetPromptNames(promptNames).
 		Exec(ctx)
 }
-
