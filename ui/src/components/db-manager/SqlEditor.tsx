@@ -65,26 +65,29 @@ export function SqlEditor({ className }: SqlEditorProps) {
             </div>
         </div>
       </div>
-      <div className="flex-1 min-h-0 relative overflow-hidden">
-        <Editor
-          height="100%"
-          defaultLanguage="sql"
-          value={code}
-          onChange={(value) => setCode(value || "")}
-          theme="vs-light" 
-          options={{
-            minimap: { enabled: false },
-            fontSize: 14,
-            fontFamily: "'Geist Mono', 'Menlo', 'Monaco', 'Courier New', monospace",
-            lineNumbers: "on",
-            roundedSelection: true,
-            scrollBeyondLastLine: false,
-            readOnly: false,
-            automaticLayout: true,
-            padding: { top: 16, bottom: 16 },
-            renderLineHighlight: 'all',
-          }}
-        />
+      <div className="flex-1 relative overflow-hidden">
+        <div className="absolute inset-0">
+            <Editor
+            height="100%"
+            width="100%"
+            defaultLanguage="sql"
+            value={code}
+            onChange={(value) => setCode(value || "")}
+            theme="vs-light" 
+            options={{
+                minimap: { enabled: false },
+                fontSize: 14,
+                fontFamily: "'Geist Mono', 'Menlo', 'Monaco', 'Courier New', monospace",
+                lineNumbers: "on",
+                roundedSelection: true,
+                scrollBeyondLastLine: false,
+                readOnly: false,
+                automaticLayout: true,
+                padding: { top: 16, bottom: 16 },
+                renderLineHighlight: 'all',
+            }}
+            />
+        </div>
       </div>
     </div>
   )
