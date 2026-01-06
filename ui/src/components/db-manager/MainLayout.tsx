@@ -25,15 +25,15 @@ export function MainLayout() {
        <div className="flex-1 overflow-hidden">
         <ResizablePanelGroup direction="horizontal">
             {/* Left Sidebar: Instances */}
-            <ResizablePanel defaultSize={20} minSize={15} maxSize={30}>
+            <ResizablePanel defaultSize={25} minSize={15} maxSize={40}>
                 <Sidebar className="h-full" />
             </ResizablePanel>
             
             <ResizableHandle />
 
             {/* Middle: SQL Editor & Results */}
-            <ResizablePanel defaultSize={60} minSize={30} className="min-w-0">
-                <ResizablePanelGroup direction="vertical" className="!flex-col">
+            <ResizablePanel defaultSize={50} minSize={30} className="min-w-0 overflow-hidden">
+                <ResizablePanelGroup direction="vertical" className="!flex-col h-full">
                     <ResizablePanel defaultSize={50} minSize={20}>
                         <SqlEditor />
                     </ResizablePanel>
@@ -49,7 +49,7 @@ export function MainLayout() {
             <ResizableHandle />
 
             {/* Right Sidebar: Schema */}
-            <ResizablePanel defaultSize={20} minSize={15} maxSize={30}>
+            <ResizablePanel defaultSize={25} minSize={15} maxSize={40}>
                 <SchemaViewer />
             </ResizablePanel>
         </ResizablePanelGroup>
