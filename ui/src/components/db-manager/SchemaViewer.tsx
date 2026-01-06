@@ -35,7 +35,7 @@ CREATE INDEX idx_users_username ON users(username);
                 <TabsTrigger value="indexes" className="flex-1">Indexes</TabsTrigger>
             </TabsList>
           </div>
-          <TabsContent value="ddl" className="flex-1 min-h-0 mt-2 p-0 border-t relative overflow-hidden">
+          <TabsContent value="ddl" className="flex-1 min-h-0 min-w-0 mt-2 p-0 border-t relative overflow-hidden">
              <div className="absolute inset-0">
                 <Editor
                     height="100%"
@@ -49,7 +49,7 @@ CREATE INDEX idx_users_username ON users(username);
                         lineNumbers: "off",
                         readOnly: true,
                         scrollBeyondLastLine: false,
-                        automaticLayout: false,
+                        automaticLayout: true,
                     }}
                 />
              </div>

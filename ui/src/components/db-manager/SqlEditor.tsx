@@ -65,7 +65,7 @@ export function SqlEditor({ className }: SqlEditorProps) {
             </div>
         </div>
       </div>
-      <div className="flex-1 relative overflow-hidden">
+      <div className="flex-1 relative overflow-hidden min-h-0 min-w-0">
         <div className="absolute inset-0">
             <Editor
             height="100%"
@@ -82,7 +82,7 @@ export function SqlEditor({ className }: SqlEditorProps) {
                 roundedSelection: true,
                 scrollBeyondLastLine: false,
                 readOnly: false,
-                automaticLayout: false,
+                automaticLayout: true,
                 padding: { top: 16, bottom: 16 },
                 renderLineHighlight: 'all',
             }}
