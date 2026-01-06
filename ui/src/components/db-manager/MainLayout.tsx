@@ -33,12 +33,12 @@ export function MainLayout() {
 
             {/* Middle: SQL Editor & Results */}
             <ResizablePanel defaultSize={60} minSize={30}>
-                <ResizablePanelGroup direction="vertical" className="flex-col">
+                <ResizablePanelGroup direction="vertical" className="!flex-col h-full w-full">
                     <ResizablePanel defaultSize={50} minSize={20}>
                         <SqlEditor />
                     </ResizablePanel>
                     
-                    <ResizableHandle />
+                    <ResizableHandle className="h-px w-full bg-border" />
                     
                     <ResizablePanel defaultSize={50} minSize={20}>
                         <ResultTable />
