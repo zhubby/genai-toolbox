@@ -21,7 +21,7 @@ export function SqlEditor({ className }: SqlEditorProps) {
   };
 
   return (
-    <div className="flex flex-col h-full bg-background">
+    <div className="flex flex-col h-full bg-background min-w-0">
       <div className="flex items-center justify-between p-2 border-b bg-muted/10 h-12">
         <div className="flex items-center gap-2">
            <Button 
