@@ -24,6 +24,8 @@ func Router(deps Dependencies) chi.Router {
 	r.Route("/sources", func(r chi.Router) {
 		r.Get("/", func(w http.ResponseWriter, r *http.Request) { listSourcesHandler(deps, w, r) })
 		r.Post("/", func(w http.ResponseWriter, r *http.Request) { createSourceHandler(deps, w, r) })
+		// 校验 Source 配置是否可用（不落库）
+		r.Post("/validate", func(w http.ResponseWriter, r *http.Request) { validateSourceHandler(deps, w, r) })
 		r.Route("/{name}", func(r chi.Router) {
 			r.Get("/", func(w http.ResponseWriter, r *http.Request) { getSourceHandler(deps, w, r) })
 			r.Put("/", func(w http.ResponseWriter, r *http.Request) { updateSourceHandler(deps, w, r) })

@@ -6,6 +6,20 @@ export type SourceItem = {
   updatedAt?: string
 }
 
+export type ValidateSourceResult = {
+  available: boolean
+  error?: string
+}
+
+export type ToolItem = {
+  name: string
+  kind: string
+  sourceName?: string
+  config: Record<string, any>
+  createdAt?: string
+  updatedAt?: string
+}
+
 const BASE = "/tb-api/api/config";
 
 export async function listSources(params?: { dbPath?: string }): Promise<SourceItem[]> {
@@ -23,6 +37,17 @@ export async function createSource(body: { name: string; kind: string; config?: 
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`createSource failed: ${res.status}`);
+  return res.json();
+}
+
+export async function validateSource(body: { kind: string; config?: Record<string, any> }, params?: { dbPath?: string }): Promise<ValidateSourceResult> {
+  const q = params?.dbPath ? `?dbPath=${encodeURIComponent(params.dbPath)}` : "";
+  const res = await fetch(`${BASE}/sources/validate${q}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`validateSource failed: ${res.status}`);
   return res.json();
 }
 
@@ -50,4 +75,11 @@ export async function updateSource(name: string, body: { kind: string; config?: 
   });
   if (!res.ok) throw new Error(`updateSource failed: ${res.status}`);
   return res.json();
+}
+
+export async function listTools(params?: { dbPath?: string }): Promise<ToolItem[]> {
+  const q = params?.dbPath ? `?dbPath=${encodeURIComponent(params.dbPath)}` : ""
+  const res = await fetch(`${BASE}/tools/${q}`, { cache: "no-store" })
+  if (!res.ok) throw new Error(`listTools failed: ${res.status}`)
+  return res.json()
 }

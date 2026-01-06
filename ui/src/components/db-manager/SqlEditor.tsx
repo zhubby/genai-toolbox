@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
+import { useDbManager } from "./context"
 
 interface SqlEditorProps {
   className?: string
@@ -15,6 +16,11 @@ interface SqlEditorProps {
 export function SqlEditor({ className }: SqlEditorProps) {
   const [code, setCode] = React.useState("SELECT * FROM public.users LIMIT 10;")
   const [isRunning, setIsRunning] = React.useState(false);
+  const { selectedSource } = useDbManager()
+
+  const dbName = typeof selectedSource?.config?.database === "string" ? selectedSource?.config?.database : ""
+  const connLabel = selectedSource?.name ? `${selectedSource.name}${dbName ? ` / ${dbName}` : ""}` : "未选择数据库"
+  const dialect = selectedSource?.kind === "mysql" ? "mysql" : "postgres"
 
   const handleRun = () => {
     setIsRunning(true);
@@ -43,10 +49,10 @@ export function SqlEditor({ className }: SqlEditorProps) {
         <div className="flex items-center gap-2">
             <div className="flex items-center gap-2 mr-2 bg-muted/50 px-2 py-1 rounded border text-xs text-muted-foreground">
                 <Database className="w-3 h-3" />
-                <span>prod-db-01 / users_db</span>
+                <span className="truncate max-w-[220px]">{connLabel}</span>
             </div>
             <Separator orientation="vertical" className="h-6 mx-1" />
-            <Select defaultValue="postgres">
+            <Select value={dialect}>
                 <SelectTrigger className="w-[130px] h-8 text-xs bg-background">
                     <SelectValue placeholder="Dialect" />
                 </SelectTrigger>

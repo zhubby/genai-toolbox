@@ -55,6 +55,11 @@ type CreateSourceRequest struct {
 	Config map[string]any `json:"config"`
 }
 
+type ValidateSourceRequest struct {
+	Kind   string         `json:"kind"`
+	Config map[string]any `json:"config"`
+}
+
 type UpdateSourceRequest struct {
 	Kind   string         `json:"kind"`
 	Config map[string]any `json:"config"`

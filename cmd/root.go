@@ -873,33 +873,33 @@ func run(cmd *Command) error {
 	if dbPath != "" {
 		// Always open/create the database if a path is resolved (explicit flag or default mode).
 		// This ensures `--config-db <path>` creates the DB file even when it doesn't exist yet.
-		store, err := storage.Open(ctx, dbPath)
-		if err != nil {
-			errMsg := fmt.Errorf("unable to open/create database at %q: %w", dbPath, err)
-			cmd.logger.ErrorContext(ctx, errMsg.Error())
-			return errMsg
-		}
-		defer store.Close()
+			store, err := storage.Open(ctx, dbPath)
+			if err != nil {
+				errMsg := fmt.Errorf("unable to open/create database at %q: %w", dbPath, err)
+				cmd.logger.ErrorContext(ctx, errMsg.Error())
+				return errMsg
+			}
+			defer store.Close()
 
-		// Load configuration from the database (may be empty if newly created)
-		data, err := store.LoadToolsFileData(ctx)
-		if err != nil {
-			errMsg := fmt.Errorf("unable to load configuration from database at %q: %w", dbPath, err)
-			cmd.logger.ErrorContext(ctx, errMsg.Error())
-			return errMsg
-		}
-		dbConfig = &storage.ConfigData{
-			SourceConfigs:      data.Sources,
-			AuthServiceConfigs: data.AuthServices,
-			ToolConfigs:        data.Tools,
-			ToolsetConfigs:     data.Toolsets,
-			PromptConfigs:      data.Prompts,
-		}
+			// Load configuration from the database (may be empty if newly created)
+			data, err := store.LoadToolsFileData(ctx)
+			if err != nil {
+				errMsg := fmt.Errorf("unable to load configuration from database at %q: %w", dbPath, err)
+				cmd.logger.ErrorContext(ctx, errMsg.Error())
+				return errMsg
+			}
+				dbConfig = &storage.ConfigData{
+					SourceConfigs:      data.Sources,
+					AuthServiceConfigs: data.AuthServices,
+					ToolConfigs:        data.Tools,
+					ToolsetConfigs:     data.Toolsets,
+					PromptConfigs:      data.Prompts,
+			}
 
 		if dbConfig.HasAnyConfig() {
-			cmd.logger.InfoContext(ctx, fmt.Sprintf("Loaded configuration from database: %s", dbPath))
-		} else {
-			cmd.logger.InfoContext(ctx, fmt.Sprintf("Database created/opened at %s (empty configuration)", dbPath))
+				cmd.logger.InfoContext(ctx, fmt.Sprintf("Loaded configuration from database: %s", dbPath))
+			} else {
+				cmd.logger.InfoContext(ctx, fmt.Sprintf("Database created/opened at %s (empty configuration)", dbPath))
 		}
 	}
 
