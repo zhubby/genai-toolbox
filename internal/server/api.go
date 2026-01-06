@@ -39,6 +39,8 @@ func apiRouter(s *Server) (chi.Router, error) {
 	r.Use(middleware.StripSlashes)
 	r.Use(render.SetContentType(render.ContentTypeJSON))
 
+	r.Mount("/config", configDBRouter(s))
+
 	r.Get("/toolset", func(w http.ResponseWriter, r *http.Request) { toolsetHandler(s, w, r) })
 	r.Get("/toolset/{toolsetName}", func(w http.ResponseWriter, r *http.Request) { toolsetHandler(s, w, r) })
 
