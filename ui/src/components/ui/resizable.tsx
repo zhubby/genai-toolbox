@@ -2,27 +2,33 @@
 
 import * as React from "react"
 import { GripVerticalIcon } from "lucide-react"
-import * as ResizablePrimitive from "react-resizable-panels"
+import { Group, Panel, Separator } from "react-resizable-panels"
 
 import { cn } from "@/lib/utils"
 
-const PanelGroup = (ResizablePrimitive as any).PanelGroup || (ResizablePrimitive as any).Group
-const Panel = (ResizablePrimitive as any).Panel
-const PanelResizeHandle = (ResizablePrimitive as any).PanelResizeHandle || (ResizablePrimitive as any).Separator
+// react-resizable-panels v4 API:
+// - Group (旧版 PanelGroup)
+// - Panel
+// - Separator (旧版 PanelResizeHandle)
+// - orientation prop (旧版 direction)
+
+interface ResizablePanelGroupProps extends Omit<React.ComponentProps<typeof Group>, 'orientation'> {
+  direction?: "horizontal" | "vertical"
+}
 
 function ResizablePanelGroup({
   className,
+  direction = "horizontal",
   ...props
-}: React.ComponentProps<typeof PanelGroup>) {
-  const isVertical = (props as any)?.direction === "vertical";
+}: ResizablePanelGroupProps) {
   return (
-    <PanelGroup
+    <Group
       data-slot="resizable-panel-group"
+      data-panel-group-direction={direction}
+      orientation={direction}
       className={cn(
         "flex h-full w-full",
-        isVertical ? "flex-col" : undefined,
-        // 兼容依赖 data 属性的样式（Tailwind v4 data 变体）
-        "data-[panel-group-direction=vertical]:flex-col",
+        direction === "vertical" ? "flex-col" : "flex-row",
         className
       )}
       {...props}
@@ -40,25 +46,29 @@ function ResizablePanel({ className, ...props }: React.ComponentProps<typeof Pan
   )
 }
 
+interface ResizableHandleProps extends React.ComponentProps<typeof Separator> {
+  withHandle?: boolean
+}
+
 function ResizableHandle({
   withHandle,
   className,
   ...props
-}: React.ComponentProps<typeof PanelResizeHandle> & {
-  withHandle?: boolean
-}) {
+}: ResizableHandleProps) {
   return (
-    <PanelResizeHandle
+    <Separator
       data-slot="resizable-handle"
       className={cn(
-        // 可拖拽分割条：更大的可点击区域 + 细线视觉 + 更高层级
-        // 横向：提供更宽的点击区域 w-3，细线通过 after 伪元素呈现
-        // 纵向：提供更高的点击高度 h-3，同样用 after 呈现细线
+        // 基础样式：细线可点击区域
         "relative z-20 shrink-0 flex items-center justify-center touch-none select-none",
-        "data-[panel-group-direction=horizontal]:w-3 data-[panel-group-direction=horizontal]:cursor-col-resize",
-        "data-[panel-group-direction=vertical]:h-3 data-[panel-group-direction=vertical]:w-full data-[panel-group-direction=vertical]:cursor-row-resize",
-        // 细线视觉
-        "after:absolute after:bg-border",
+        "bg-transparent transition-colors",
+        // 横向分隔条
+        "data-[panel-group-direction=horizontal]:w-1.5 data-[panel-group-direction=horizontal]:cursor-col-resize",
+        // 纵向分隔条
+        "data-[panel-group-direction=vertical]:h-1.5 data-[panel-group-direction=vertical]:w-full data-[panel-group-direction=vertical]:cursor-row-resize",
+        // 细线视觉（通过 after 伪元素）
+        "after:absolute after:bg-border/60 after:transition-colors",
+        "hover:after:bg-primary/40",
         "data-[panel-group-direction=horizontal]:after:inset-y-0 data-[panel-group-direction=horizontal]:after:left-1/2 data-[panel-group-direction=horizontal]:after:w-px data-[panel-group-direction=horizontal]:after:-translate-x-1/2",
         "data-[panel-group-direction=vertical]:after:inset-x-0 data-[panel-group-direction=vertical]:after:top-1/2 data-[panel-group-direction=vertical]:after:h-px data-[panel-group-direction=vertical]:after:-translate-y-1/2",
         // 焦点可见性
@@ -70,11 +80,11 @@ function ResizableHandle({
       {...props}
     >
       {withHandle && (
-        <div className="bg-border z-10 flex h-4 w-3 items-center justify-center rounded-xs border">
-          <GripVerticalIcon className="size-2.5" />
+        <div className="bg-muted/80 hover:bg-muted z-10 flex h-5 w-1 items-center justify-center rounded-full transition-colors data-[panel-group-direction=vertical]:h-1 data-[panel-group-direction=vertical]:w-5">
+          <GripVerticalIcon className="size-2 text-muted-foreground/60" />
         </div>
       )}
-    </PanelResizeHandle>
+    </Separator>
   )
 }
 

@@ -21,3 +21,8 @@ node_modules
 # executable
 genai-toolbox
 toolbox
+
+
+/*.db
+
+/.gocache

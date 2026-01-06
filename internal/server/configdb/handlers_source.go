@@ -1,4 +1,4 @@
-package server
+package configdb
 
 import (
 	"fmt"
@@ -10,19 +10,19 @@ import (
 	"go.opentelemetry.io/otel/codes"
 )
 
-func configDBListSourcesHandler(s *Server, w http.ResponseWriter, r *http.Request) {
-	ctx, span := s.instrumentation.Tracer.Start(r.Context(), "toolbox/server/configdb/source/list")
+func listSourcesHandler(deps Dependencies, w http.ResponseWriter, r *http.Request) {
+	ctx, span := deps.Tracer.Start(r.Context(), "toolbox/server/configdb/source/list")
 	defer span.End()
 
-	dbPath := configDBPathFromRequest(r)
-	store, ok, err := configDBOpenForRead(ctx, dbPath)
+	dbPath := dbPathFromRequest(r)
+	store, ok, err := openForRead(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	if !ok {
-		render.JSON(w, r, []configDBSourceDTO{})
+		render.JSON(w, r, []SourceDTO{})
 		return
 	}
 	defer store.Close()
@@ -30,12 +30,12 @@ func configDBListSourcesHandler(s *Server, w http.ResponseWriter, r *http.Reques
 	rows, err := store.ListSources(ctx)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
-	out := make([]configDBSourceDTO, 0, len(rows))
+	out := make([]SourceDTO, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, configDBSourceDTO{
+		out = append(out, SourceDTO{
 			Name:      row.ID,
 			Kind:      row.Kind,
 			Config:    row.Config,
@@ -46,18 +46,18 @@ func configDBListSourcesHandler(s *Server, w http.ResponseWriter, r *http.Reques
 	render.JSON(w, r, out)
 }
 
-func configDBGetSourceHandler(s *Server, w http.ResponseWriter, r *http.Request) {
-	ctx, span := s.instrumentation.Tracer.Start(r.Context(), "toolbox/server/configdb/source/get")
+func getSourceHandler(deps Dependencies, w http.ResponseWriter, r *http.Request) {
+	ctx, span := deps.Tracer.Start(r.Context(), "toolbox/server/configdb/source/get")
 	defer span.End()
 
 	name := chi.URLParam(r, "name")
 	span.SetAttributes(attribute.String("source_name", name))
 
-	dbPath := configDBPathFromRequest(r)
-	store, ok, err := configDBOpenForRead(ctx, dbPath)
+	dbPath := dbPathFromRequest(r)
+	store, ok, err := openForRead(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	if !ok {
@@ -71,10 +71,10 @@ func configDBGetSourceHandler(s *Server, w http.ResponseWriter, r *http.Request)
 	row, err := store.GetSource(ctx, name)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
-	render.JSON(w, r, configDBSourceDTO{
+	render.JSON(w, r, SourceDTO{
 		Name:      row.ID,
 		Kind:      row.Kind,
 		Config:    row.Config,
@@ -83,34 +83,34 @@ func configDBGetSourceHandler(s *Server, w http.ResponseWriter, r *http.Request)
 	})
 }
 
-func configDBCreateSourceHandler(s *Server, w http.ResponseWriter, r *http.Request) {
-	ctx, span := s.instrumentation.Tracer.Start(r.Context(), "toolbox/server/configdb/source/create")
+func createSourceHandler(deps Dependencies, w http.ResponseWriter, r *http.Request) {
+	ctx, span := deps.Tracer.Start(r.Context(), "toolbox/server/configdb/source/create")
 	defer span.End()
 
-	var req configDBCreateSourceRequest
-	if err := configDBDecodeJSON(r, &req); err != nil {
+	var req CreateSourceRequest
+	if err := decodeJSON(r, &req); err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, fmt.Errorf("%w: invalid JSON: %v", errConfigDBBadRequest, err))
+		writeError(deps, w, r, fmt.Errorf("%w: invalid JSON: %v", errBadRequest, err))
 		return
 	}
 	if req.Name == "" || req.Kind == "" {
-		err := fmt.Errorf("%w: name/kind is required", errConfigDBBadRequest)
+		err := fmt.Errorf("%w: name/kind is required", errBadRequest)
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
-	cfg, err := configDBNormalizeNumbers(req.Config)
+	cfg, err := normalizeNumbers(req.Config)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, fmt.Errorf("%w: %v", errConfigDBBadRequest, err))
+		writeError(deps, w, r, fmt.Errorf("%w: %v", errBadRequest, err))
 		return
 	}
 
-	dbPath := configDBPathFromRequest(r)
-	store, err := configDBOpenForWrite(ctx, dbPath)
+	dbPath := dbPathFromRequest(r)
+	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	defer store.Close()
@@ -118,12 +118,12 @@ func configDBCreateSourceHandler(s *Server, w http.ResponseWriter, r *http.Reque
 	row, err := store.CreateSource(ctx, req.Name, req.Kind, cfg)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 
 	render.Status(r, http.StatusCreated)
-	render.JSON(w, r, configDBSourceDTO{
+	render.JSON(w, r, SourceDTO{
 		Name:      row.ID,
 		Kind:      row.Kind,
 		Config:    row.Config,
@@ -132,37 +132,37 @@ func configDBCreateSourceHandler(s *Server, w http.ResponseWriter, r *http.Reque
 	})
 }
 
-func configDBUpdateSourceHandler(s *Server, w http.ResponseWriter, r *http.Request) {
-	ctx, span := s.instrumentation.Tracer.Start(r.Context(), "toolbox/server/configdb/source/update")
+func updateSourceHandler(deps Dependencies, w http.ResponseWriter, r *http.Request) {
+	ctx, span := deps.Tracer.Start(r.Context(), "toolbox/server/configdb/source/update")
 	defer span.End()
 
 	name := chi.URLParam(r, "name")
 	span.SetAttributes(attribute.String("source_name", name))
 
-	var req configDBUpdateSourceRequest
-	if err := configDBDecodeJSON(r, &req); err != nil {
+	var req UpdateSourceRequest
+	if err := decodeJSON(r, &req); err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, fmt.Errorf("%w: invalid JSON: %v", errConfigDBBadRequest, err))
+		writeError(deps, w, r, fmt.Errorf("%w: invalid JSON: %v", errBadRequest, err))
 		return
 	}
 	if req.Kind == "" {
-		err := fmt.Errorf("%w: kind is required", errConfigDBBadRequest)
+		err := fmt.Errorf("%w: kind is required", errBadRequest)
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
-	cfg, err := configDBNormalizeNumbers(req.Config)
+	cfg, err := normalizeNumbers(req.Config)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, fmt.Errorf("%w: %v", errConfigDBBadRequest, err))
+		writeError(deps, w, r, fmt.Errorf("%w: %v", errBadRequest, err))
 		return
 	}
 
-	dbPath := configDBPathFromRequest(r)
-	store, err := configDBOpenForWrite(ctx, dbPath)
+	dbPath := dbPathFromRequest(r)
+	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	defer store.Close()
@@ -170,10 +170,10 @@ func configDBUpdateSourceHandler(s *Server, w http.ResponseWriter, r *http.Reque
 	row, err := store.UpdateSource(ctx, name, req.Kind, cfg)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
-	render.JSON(w, r, configDBSourceDTO{
+	render.JSON(w, r, SourceDTO{
 		Name:      row.ID,
 		Kind:      row.Kind,
 		Config:    row.Config,
@@ -182,25 +182,25 @@ func configDBUpdateSourceHandler(s *Server, w http.ResponseWriter, r *http.Reque
 	})
 }
 
-func configDBDeleteSourceHandler(s *Server, w http.ResponseWriter, r *http.Request) {
-	ctx, span := s.instrumentation.Tracer.Start(r.Context(), "toolbox/server/configdb/source/delete")
+func deleteSourceHandler(deps Dependencies, w http.ResponseWriter, r *http.Request) {
+	ctx, span := deps.Tracer.Start(r.Context(), "toolbox/server/configdb/source/delete")
 	defer span.End()
 
 	name := chi.URLParam(r, "name")
 	span.SetAttributes(attribute.String("source_name", name))
 
-	dbPath := configDBPathFromRequest(r)
-	store, err := configDBOpenForWrite(ctx, dbPath)
+	dbPath := dbPathFromRequest(r)
+	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	defer store.Close()
 
 	if err := store.DeleteSource(ctx, name); err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

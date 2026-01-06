@@ -6,6 +6,7 @@ import { Play, Eraser, FileCode, Save, Loader2, Database } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { cn } from "@/lib/utils"
 
 interface SqlEditorProps {
   className?: string
@@ -21,7 +22,7 @@ export function SqlEditor({ className }: SqlEditorProps) {
   };
 
   return (
-    <div className="flex flex-col h-full bg-background min-w-0">
+    <div className={cn("flex flex-col h-full bg-background min-w-0", className)}>
       <div className="flex items-center justify-between p-2 border-b bg-muted/10 h-12">
         <div className="flex items-center gap-2">
            <Button 

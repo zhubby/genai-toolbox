@@ -1,4 +1,4 @@
-package server
+package configdb
 
 import (
 	"fmt"
@@ -10,19 +10,19 @@ import (
 	"go.opentelemetry.io/otel/codes"
 )
 
-func configDBListPromptsetsHandler(s *Server, w http.ResponseWriter, r *http.Request) {
-	ctx, span := s.instrumentation.Tracer.Start(r.Context(), "toolbox/server/configdb/promptset/list")
+func listPromptsetsHandler(deps Dependencies, w http.ResponseWriter, r *http.Request) {
+	ctx, span := deps.Tracer.Start(r.Context(), "toolbox/server/configdb/promptset/list")
 	defer span.End()
 
-	dbPath := configDBPathFromRequest(r)
-	store, ok, err := configDBOpenForRead(ctx, dbPath)
+	dbPath := dbPathFromRequest(r)
+	store, ok, err := openForRead(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	if !ok {
-		render.JSON(w, r, []configDBPromptsetDTO{})
+		render.JSON(w, r, []PromptsetDTO{})
 		return
 	}
 	defer store.Close()
@@ -30,12 +30,12 @@ func configDBListPromptsetsHandler(s *Server, w http.ResponseWriter, r *http.Req
 	rows, err := store.ListPromptsets(ctx)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
-	out := make([]configDBPromptsetDTO, 0, len(rows))
+	out := make([]PromptsetDTO, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, configDBPromptsetDTO{
+		out = append(out, PromptsetDTO{
 			Name:        row.ID,
 			PromptNames: row.PromptNames,
 			CreatedAt:   row.CreatedAt,
@@ -45,18 +45,18 @@ func configDBListPromptsetsHandler(s *Server, w http.ResponseWriter, r *http.Req
 	render.JSON(w, r, out)
 }
 
-func configDBGetPromptsetHandler(s *Server, w http.ResponseWriter, r *http.Request) {
-	ctx, span := s.instrumentation.Tracer.Start(r.Context(), "toolbox/server/configdb/promptset/get")
+func getPromptsetHandler(deps Dependencies, w http.ResponseWriter, r *http.Request) {
+	ctx, span := deps.Tracer.Start(r.Context(), "toolbox/server/configdb/promptset/get")
 	defer span.End()
 
 	name := chi.URLParam(r, "name")
 	span.SetAttributes(attribute.String("promptset_name", name))
 
-	dbPath := configDBPathFromRequest(r)
-	store, ok, err := configDBOpenForRead(ctx, dbPath)
+	dbPath := dbPathFromRequest(r)
+	store, ok, err := openForRead(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	if !ok {
@@ -70,10 +70,10 @@ func configDBGetPromptsetHandler(s *Server, w http.ResponseWriter, r *http.Reque
 	row, err := store.GetPromptset(ctx, name)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
-	render.JSON(w, r, configDBPromptsetDTO{
+	render.JSON(w, r, PromptsetDTO{
 		Name:        row.ID,
 		PromptNames: row.PromptNames,
 		CreatedAt:   row.CreatedAt,
@@ -81,28 +81,28 @@ func configDBGetPromptsetHandler(s *Server, w http.ResponseWriter, r *http.Reque
 	})
 }
 
-func configDBCreatePromptsetHandler(s *Server, w http.ResponseWriter, r *http.Request) {
-	ctx, span := s.instrumentation.Tracer.Start(r.Context(), "toolbox/server/configdb/promptset/create")
+func createPromptsetHandler(deps Dependencies, w http.ResponseWriter, r *http.Request) {
+	ctx, span := deps.Tracer.Start(r.Context(), "toolbox/server/configdb/promptset/create")
 	defer span.End()
 
-	var req configDBCreatePromptsetRequest
-	if err := configDBDecodeJSON(r, &req); err != nil {
+	var req CreatePromptsetRequest
+	if err := decodeJSON(r, &req); err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, fmt.Errorf("%w: invalid JSON: %v", errConfigDBBadRequest, err))
+		writeError(deps, w, r, fmt.Errorf("%w: invalid JSON: %v", errBadRequest, err))
 		return
 	}
 	if req.Name == "" {
-		err := fmt.Errorf("%w: name is required", errConfigDBBadRequest)
+		err := fmt.Errorf("%w: name is required", errBadRequest)
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 
-	dbPath := configDBPathFromRequest(r)
-	store, err := configDBOpenForWrite(ctx, dbPath)
+	dbPath := dbPathFromRequest(r)
+	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	defer store.Close()
@@ -110,11 +110,11 @@ func configDBCreatePromptsetHandler(s *Server, w http.ResponseWriter, r *http.Re
 	row, err := store.CreatePromptset(ctx, req.Name, req.PromptNames)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	render.Status(r, http.StatusCreated)
-	render.JSON(w, r, configDBPromptsetDTO{
+	render.JSON(w, r, PromptsetDTO{
 		Name:        row.ID,
 		PromptNames: row.PromptNames,
 		CreatedAt:   row.CreatedAt,
@@ -122,25 +122,25 @@ func configDBCreatePromptsetHandler(s *Server, w http.ResponseWriter, r *http.Re
 	})
 }
 
-func configDBUpdatePromptsetHandler(s *Server, w http.ResponseWriter, r *http.Request) {
-	ctx, span := s.instrumentation.Tracer.Start(r.Context(), "toolbox/server/configdb/promptset/update")
+func updatePromptsetHandler(deps Dependencies, w http.ResponseWriter, r *http.Request) {
+	ctx, span := deps.Tracer.Start(r.Context(), "toolbox/server/configdb/promptset/update")
 	defer span.End()
 
 	name := chi.URLParam(r, "name")
 	span.SetAttributes(attribute.String("promptset_name", name))
 
-	var req configDBUpdatePromptsetRequest
-	if err := configDBDecodeJSON(r, &req); err != nil {
+	var req UpdatePromptsetRequest
+	if err := decodeJSON(r, &req); err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, fmt.Errorf("%w: invalid JSON: %v", errConfigDBBadRequest, err))
+		writeError(deps, w, r, fmt.Errorf("%w: invalid JSON: %v", errBadRequest, err))
 		return
 	}
 
-	dbPath := configDBPathFromRequest(r)
-	store, err := configDBOpenForWrite(ctx, dbPath)
+	dbPath := dbPathFromRequest(r)
+	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	defer store.Close()
@@ -148,10 +148,10 @@ func configDBUpdatePromptsetHandler(s *Server, w http.ResponseWriter, r *http.Re
 	row, err := store.UpdatePromptset(ctx, name, req.PromptNames)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
-	render.JSON(w, r, configDBPromptsetDTO{
+	render.JSON(w, r, PromptsetDTO{
 		Name:        row.ID,
 		PromptNames: row.PromptNames,
 		CreatedAt:   row.CreatedAt,
@@ -159,25 +159,25 @@ func configDBUpdatePromptsetHandler(s *Server, w http.ResponseWriter, r *http.Re
 	})
 }
 
-func configDBDeletePromptsetHandler(s *Server, w http.ResponseWriter, r *http.Request) {
-	ctx, span := s.instrumentation.Tracer.Start(r.Context(), "toolbox/server/configdb/promptset/delete")
+func deletePromptsetHandler(deps Dependencies, w http.ResponseWriter, r *http.Request) {
+	ctx, span := deps.Tracer.Start(r.Context(), "toolbox/server/configdb/promptset/delete")
 	defer span.End()
 
 	name := chi.URLParam(r, "name")
 	span.SetAttributes(attribute.String("promptset_name", name))
 
-	dbPath := configDBPathFromRequest(r)
-	store, err := configDBOpenForWrite(ctx, dbPath)
+	dbPath := dbPathFromRequest(r)
+	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	defer store.Close()
 
 	if err := store.DeletePromptset(ctx, name); err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

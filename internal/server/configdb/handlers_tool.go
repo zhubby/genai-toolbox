@@ -1,4 +1,4 @@
-package server
+package configdb
 
 import (
 	"fmt"
@@ -10,19 +10,19 @@ import (
 	"go.opentelemetry.io/otel/codes"
 )
 
-func configDBListToolsHandler(s *Server, w http.ResponseWriter, r *http.Request) {
-	ctx, span := s.instrumentation.Tracer.Start(r.Context(), "toolbox/server/configdb/tool/list")
+func listToolsHandler(deps Dependencies, w http.ResponseWriter, r *http.Request) {
+	ctx, span := deps.Tracer.Start(r.Context(), "toolbox/server/configdb/tool/list")
 	defer span.End()
 
-	dbPath := configDBPathFromRequest(r)
-	store, ok, err := configDBOpenForRead(ctx, dbPath)
+	dbPath := dbPathFromRequest(r)
+	store, ok, err := openForRead(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	if !ok {
-		render.JSON(w, r, []configDBToolDTO{})
+		render.JSON(w, r, []ToolDTO{})
 		return
 	}
 	defer store.Close()
@@ -30,12 +30,12 @@ func configDBListToolsHandler(s *Server, w http.ResponseWriter, r *http.Request)
 	rows, err := store.ListTools(ctx)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
-	out := make([]configDBToolDTO, 0, len(rows))
+	out := make([]ToolDTO, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, configDBToolDTO{
+		out = append(out, ToolDTO{
 			Name:       row.ID,
 			Kind:       row.Kind,
 			SourceName: row.SourceName,
@@ -47,18 +47,18 @@ func configDBListToolsHandler(s *Server, w http.ResponseWriter, r *http.Request)
 	render.JSON(w, r, out)
 }
 
-func configDBGetToolHandler(s *Server, w http.ResponseWriter, r *http.Request) {
-	ctx, span := s.instrumentation.Tracer.Start(r.Context(), "toolbox/server/configdb/tool/get")
+func getToolHandler(deps Dependencies, w http.ResponseWriter, r *http.Request) {
+	ctx, span := deps.Tracer.Start(r.Context(), "toolbox/server/configdb/tool/get")
 	defer span.End()
 
 	name := chi.URLParam(r, "name")
 	span.SetAttributes(attribute.String("tool_name", name))
 
-	dbPath := configDBPathFromRequest(r)
-	store, ok, err := configDBOpenForRead(ctx, dbPath)
+	dbPath := dbPathFromRequest(r)
+	store, ok, err := openForRead(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	if !ok {
@@ -72,10 +72,10 @@ func configDBGetToolHandler(s *Server, w http.ResponseWriter, r *http.Request) {
 	row, err := store.GetTool(ctx, name)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
-	render.JSON(w, r, configDBToolDTO{
+	render.JSON(w, r, ToolDTO{
 		Name:       row.ID,
 		Kind:       row.Kind,
 		SourceName: row.SourceName,
@@ -85,34 +85,34 @@ func configDBGetToolHandler(s *Server, w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func configDBCreateToolHandler(s *Server, w http.ResponseWriter, r *http.Request) {
-	ctx, span := s.instrumentation.Tracer.Start(r.Context(), "toolbox/server/configdb/tool/create")
+func createToolHandler(deps Dependencies, w http.ResponseWriter, r *http.Request) {
+	ctx, span := deps.Tracer.Start(r.Context(), "toolbox/server/configdb/tool/create")
 	defer span.End()
 
-	var req configDBCreateToolRequest
-	if err := configDBDecodeJSON(r, &req); err != nil {
+	var req CreateToolRequest
+	if err := decodeJSON(r, &req); err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, fmt.Errorf("%w: invalid JSON: %v", errConfigDBBadRequest, err))
+		writeError(deps, w, r, fmt.Errorf("%w: invalid JSON: %v", errBadRequest, err))
 		return
 	}
 	if req.Name == "" || req.Kind == "" {
-		err := fmt.Errorf("%w: name/kind is required", errConfigDBBadRequest)
+		err := fmt.Errorf("%w: name/kind is required", errBadRequest)
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
-	cfg, err := configDBNormalizeNumbers(req.Config)
+	cfg, err := normalizeNumbers(req.Config)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, fmt.Errorf("%w: %v", errConfigDBBadRequest, err))
+		writeError(deps, w, r, fmt.Errorf("%w: %v", errBadRequest, err))
 		return
 	}
 
-	dbPath := configDBPathFromRequest(r)
-	store, err := configDBOpenForWrite(ctx, dbPath)
+	dbPath := dbPathFromRequest(r)
+	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	defer store.Close()
@@ -120,11 +120,11 @@ func configDBCreateToolHandler(s *Server, w http.ResponseWriter, r *http.Request
 	row, err := store.CreateTool(ctx, req.Name, req.Kind, req.SourceName, cfg)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	render.Status(r, http.StatusCreated)
-	render.JSON(w, r, configDBToolDTO{
+	render.JSON(w, r, ToolDTO{
 		Name:       row.ID,
 		Kind:       row.Kind,
 		SourceName: row.SourceName,
@@ -134,37 +134,37 @@ func configDBCreateToolHandler(s *Server, w http.ResponseWriter, r *http.Request
 	})
 }
 
-func configDBUpdateToolHandler(s *Server, w http.ResponseWriter, r *http.Request) {
-	ctx, span := s.instrumentation.Tracer.Start(r.Context(), "toolbox/server/configdb/tool/update")
+func updateToolHandler(deps Dependencies, w http.ResponseWriter, r *http.Request) {
+	ctx, span := deps.Tracer.Start(r.Context(), "toolbox/server/configdb/tool/update")
 	defer span.End()
 
 	name := chi.URLParam(r, "name")
 	span.SetAttributes(attribute.String("tool_name", name))
 
-	var req configDBUpdateToolRequest
-	if err := configDBDecodeJSON(r, &req); err != nil {
+	var req UpdateToolRequest
+	if err := decodeJSON(r, &req); err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, fmt.Errorf("%w: invalid JSON: %v", errConfigDBBadRequest, err))
+		writeError(deps, w, r, fmt.Errorf("%w: invalid JSON: %v", errBadRequest, err))
 		return
 	}
 	if req.Kind == "" {
-		err := fmt.Errorf("%w: kind is required", errConfigDBBadRequest)
+		err := fmt.Errorf("%w: kind is required", errBadRequest)
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
-	cfg, err := configDBNormalizeNumbers(req.Config)
+	cfg, err := normalizeNumbers(req.Config)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, fmt.Errorf("%w: %v", errConfigDBBadRequest, err))
+		writeError(deps, w, r, fmt.Errorf("%w: %v", errBadRequest, err))
 		return
 	}
 
-	dbPath := configDBPathFromRequest(r)
-	store, err := configDBOpenForWrite(ctx, dbPath)
+	dbPath := dbPathFromRequest(r)
+	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	defer store.Close()
@@ -172,10 +172,10 @@ func configDBUpdateToolHandler(s *Server, w http.ResponseWriter, r *http.Request
 	row, err := store.UpdateTool(ctx, name, req.Kind, req.SourceName, cfg)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
-	render.JSON(w, r, configDBToolDTO{
+	render.JSON(w, r, ToolDTO{
 		Name:       row.ID,
 		Kind:       row.Kind,
 		SourceName: row.SourceName,
@@ -185,25 +185,25 @@ func configDBUpdateToolHandler(s *Server, w http.ResponseWriter, r *http.Request
 	})
 }
 
-func configDBDeleteToolHandler(s *Server, w http.ResponseWriter, r *http.Request) {
-	ctx, span := s.instrumentation.Tracer.Start(r.Context(), "toolbox/server/configdb/tool/delete")
+func deleteToolHandler(deps Dependencies, w http.ResponseWriter, r *http.Request) {
+	ctx, span := deps.Tracer.Start(r.Context(), "toolbox/server/configdb/tool/delete")
 	defer span.End()
 
 	name := chi.URLParam(r, "name")
 	span.SetAttributes(attribute.String("tool_name", name))
 
-	dbPath := configDBPathFromRequest(r)
-	store, err := configDBOpenForWrite(ctx, dbPath)
+	dbPath := dbPathFromRequest(r)
+	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	defer store.Close()
 
 	if err := store.DeleteTool(ctx, name); err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

@@ -1,15 +1,8 @@
 "use client"
 
-import * as React from "react"
-import { cn } from "@/lib/utils"
-import { 
-  Wifi, 
-  WifiOff, 
-  GitBranch, 
-  Check, 
-  AlertCircle,
-  Clock 
-} from "lucide-react"
+"use client"
+
+import { Wifi, GitBranch, Check } from "lucide-react"
 
 export function StatusBar() {
   return (

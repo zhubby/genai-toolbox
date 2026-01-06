@@ -871,52 +871,35 @@ func run(cmd *Command) error {
 	}
 
 	if dbPath != "" {
-		// Load or create database
-		var err error
-		if hasAnyConfigParam {
-			// Explicit --config-db flag or other config provided, only load if exists
-			dbConfig, err = storage.LoadFromDB(ctx, dbPath)
-			if err != nil {
-				errMsg := fmt.Errorf("unable to load configuration from database at %q: %w", dbPath, err)
-				cmd.logger.ErrorContext(ctx, errMsg.Error())
-				return errMsg
-			}
-			if dbConfig != nil {
-				cmd.logger.InfoContext(ctx, fmt.Sprintf("Loaded configuration from database: %s", dbPath))
-			}
+		// Always open/create the database if a path is resolved (explicit flag or default mode).
+		// This ensures `--config-db <path>` creates the DB file even when it doesn't exist yet.
+		store, err := storage.Open(ctx, dbPath)
+		if err != nil {
+			errMsg := fmt.Errorf("unable to open/create database at %q: %w", dbPath, err)
+			cmd.logger.ErrorContext(ctx, errMsg.Error())
+			return errMsg
+		}
+		defer store.Close()
+
+		// Load configuration from the database (may be empty if newly created)
+		data, err := store.LoadToolsFileData(ctx)
+		if err != nil {
+			errMsg := fmt.Errorf("unable to load configuration from database at %q: %w", dbPath, err)
+			cmd.logger.ErrorContext(ctx, errMsg.Error())
+			return errMsg
+		}
+		dbConfig = &storage.ConfigData{
+			SourceConfigs:      data.Sources,
+			AuthServiceConfigs: data.AuthServices,
+			ToolConfigs:        data.Tools,
+			ToolsetConfigs:     data.Toolsets,
+			PromptConfigs:      data.Prompts,
+		}
+
+		if dbConfig.HasAnyConfig() {
+			cmd.logger.InfoContext(ctx, fmt.Sprintf("Loaded configuration from database: %s", dbPath))
 		} else {
-			// No config params, default mode: create database if not exists and load
-			store, err := storage.Open(ctx, dbPath)
-			if err != nil {
-				errMsg := fmt.Errorf("unable to open/create database at %q: %w", dbPath, err)
-				cmd.logger.ErrorContext(ctx, errMsg.Error())
-				return errMsg
-			}
-			defer store.Close()
-
-			// Load configuration from the database (may be empty if newly created)
-			data, err := store.LoadToolsFileData(ctx)
-			if err != nil {
-				errMsg := fmt.Errorf("unable to load configuration from database at %q: %w", dbPath, err)
-				cmd.logger.ErrorContext(ctx, errMsg.Error())
-				return errMsg
-			}
-
-			if data != nil {
-				dbConfig = &storage.ConfigData{
-					SourceConfigs:      data.Sources,
-					AuthServiceConfigs: data.AuthServices,
-					ToolConfigs:        data.Tools,
-					ToolsetConfigs:     data.Toolsets,
-					PromptConfigs:      data.Prompts,
-				}
-			}
-
-			if dbConfig != nil && dbConfig.HasAnyConfig() {
-				cmd.logger.InfoContext(ctx, fmt.Sprintf("Loaded configuration from database: %s", dbPath))
-			} else {
-				cmd.logger.InfoContext(ctx, fmt.Sprintf("Database created/opened at %s (empty configuration)", dbPath))
-			}
+			cmd.logger.InfoContext(ctx, fmt.Sprintf("Database created/opened at %s (empty configuration)", dbPath))
 		}
 	}
 
@@ -1043,11 +1026,13 @@ func run(cmd *Command) error {
 	// Merge: DB config as base, YAML config overrides
 	mergedConfig := storage.MergeConfigs(dbConfig, yamlConfig)
 
-	// Validate that we have at least some configuration
-	// If no config parameters provided, allow empty database (default SQLite mode)
-	// Otherwise, require at least some configuration
-	if !hasAnyConfigParam {
-		// Default SQLite mode: allow empty database, user can add config later
+	// Validate that we have at least some configuration.
+	//
+	// Allow empty config in:
+	// - Default SQLite mode (no explicit config parameters): user can add configs later via API.
+	// - Explicit DB-only mode (`--config-db` only): create/open DB and allow empty for control-plane usage.
+	allowEmptyConfig := !hasAnyConfigParam || (hasExplicitDB && !hasPrebuilt && !hasCustomFiles)
+	if allowEmptyConfig {
 		if mergedConfig == nil {
 			mergedConfig = &storage.ConfigData{
 				SourceConfigs:      make(map[string]sources.SourceConfig),

@@ -1,4 +1,4 @@
-package server
+package configdb
 
 import (
 	"fmt"
@@ -10,19 +10,19 @@ import (
 	"go.opentelemetry.io/otel/codes"
 )
 
-func configDBListAuthServicesHandler(s *Server, w http.ResponseWriter, r *http.Request) {
-	ctx, span := s.instrumentation.Tracer.Start(r.Context(), "toolbox/server/configdb/authservice/list")
+func listAuthServicesHandler(deps Dependencies, w http.ResponseWriter, r *http.Request) {
+	ctx, span := deps.Tracer.Start(r.Context(), "toolbox/server/configdb/authservice/list")
 	defer span.End()
 
-	dbPath := configDBPathFromRequest(r)
-	store, ok, err := configDBOpenForRead(ctx, dbPath)
+	dbPath := dbPathFromRequest(r)
+	store, ok, err := openForRead(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	if !ok {
-		render.JSON(w, r, []configDBAuthServiceDTO{})
+		render.JSON(w, r, []AuthServiceDTO{})
 		return
 	}
 	defer store.Close()
@@ -30,12 +30,12 @@ func configDBListAuthServicesHandler(s *Server, w http.ResponseWriter, r *http.R
 	rows, err := store.ListAuthServices(ctx)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
-	out := make([]configDBAuthServiceDTO, 0, len(rows))
+	out := make([]AuthServiceDTO, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, configDBAuthServiceDTO{
+		out = append(out, AuthServiceDTO{
 			Name:      row.ID,
 			Kind:      row.Kind,
 			Config:    row.Config,
@@ -46,18 +46,18 @@ func configDBListAuthServicesHandler(s *Server, w http.ResponseWriter, r *http.R
 	render.JSON(w, r, out)
 }
 
-func configDBGetAuthServiceHandler(s *Server, w http.ResponseWriter, r *http.Request) {
-	ctx, span := s.instrumentation.Tracer.Start(r.Context(), "toolbox/server/configdb/authservice/get")
+func getAuthServiceHandler(deps Dependencies, w http.ResponseWriter, r *http.Request) {
+	ctx, span := deps.Tracer.Start(r.Context(), "toolbox/server/configdb/authservice/get")
 	defer span.End()
 
 	name := chi.URLParam(r, "name")
 	span.SetAttributes(attribute.String("authservice_name", name))
 
-	dbPath := configDBPathFromRequest(r)
-	store, ok, err := configDBOpenForRead(ctx, dbPath)
+	dbPath := dbPathFromRequest(r)
+	store, ok, err := openForRead(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	if !ok {
@@ -71,10 +71,10 @@ func configDBGetAuthServiceHandler(s *Server, w http.ResponseWriter, r *http.Req
 	row, err := store.GetAuthService(ctx, name)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
-	render.JSON(w, r, configDBAuthServiceDTO{
+	render.JSON(w, r, AuthServiceDTO{
 		Name:      row.ID,
 		Kind:      row.Kind,
 		Config:    row.Config,
@@ -83,34 +83,34 @@ func configDBGetAuthServiceHandler(s *Server, w http.ResponseWriter, r *http.Req
 	})
 }
 
-func configDBCreateAuthServiceHandler(s *Server, w http.ResponseWriter, r *http.Request) {
-	ctx, span := s.instrumentation.Tracer.Start(r.Context(), "toolbox/server/configdb/authservice/create")
+func createAuthServiceHandler(deps Dependencies, w http.ResponseWriter, r *http.Request) {
+	ctx, span := deps.Tracer.Start(r.Context(), "toolbox/server/configdb/authservice/create")
 	defer span.End()
 
-	var req configDBCreateAuthServiceRequest
-	if err := configDBDecodeJSON(r, &req); err != nil {
+	var req CreateAuthServiceRequest
+	if err := decodeJSON(r, &req); err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, fmt.Errorf("%w: invalid JSON: %v", errConfigDBBadRequest, err))
+		writeError(deps, w, r, fmt.Errorf("%w: invalid JSON: %v", errBadRequest, err))
 		return
 	}
 	if req.Name == "" || req.Kind == "" {
-		err := fmt.Errorf("%w: name/kind is required", errConfigDBBadRequest)
+		err := fmt.Errorf("%w: name/kind is required", errBadRequest)
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
-	cfg, err := configDBNormalizeNumbers(req.Config)
+	cfg, err := normalizeNumbers(req.Config)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, fmt.Errorf("%w: %v", errConfigDBBadRequest, err))
+		writeError(deps, w, r, fmt.Errorf("%w: %v", errBadRequest, err))
 		return
 	}
 
-	dbPath := configDBPathFromRequest(r)
-	store, err := configDBOpenForWrite(ctx, dbPath)
+	dbPath := dbPathFromRequest(r)
+	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	defer store.Close()
@@ -118,11 +118,11 @@ func configDBCreateAuthServiceHandler(s *Server, w http.ResponseWriter, r *http.
 	row, err := store.CreateAuthService(ctx, req.Name, req.Kind, cfg)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	render.Status(r, http.StatusCreated)
-	render.JSON(w, r, configDBAuthServiceDTO{
+	render.JSON(w, r, AuthServiceDTO{
 		Name:      row.ID,
 		Kind:      row.Kind,
 		Config:    row.Config,
@@ -131,37 +131,37 @@ func configDBCreateAuthServiceHandler(s *Server, w http.ResponseWriter, r *http.
 	})
 }
 
-func configDBUpdateAuthServiceHandler(s *Server, w http.ResponseWriter, r *http.Request) {
-	ctx, span := s.instrumentation.Tracer.Start(r.Context(), "toolbox/server/configdb/authservice/update")
+func updateAuthServiceHandler(deps Dependencies, w http.ResponseWriter, r *http.Request) {
+	ctx, span := deps.Tracer.Start(r.Context(), "toolbox/server/configdb/authservice/update")
 	defer span.End()
 
 	name := chi.URLParam(r, "name")
 	span.SetAttributes(attribute.String("authservice_name", name))
 
-	var req configDBUpdateAuthServiceRequest
-	if err := configDBDecodeJSON(r, &req); err != nil {
+	var req UpdateAuthServiceRequest
+	if err := decodeJSON(r, &req); err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, fmt.Errorf("%w: invalid JSON: %v", errConfigDBBadRequest, err))
+		writeError(deps, w, r, fmt.Errorf("%w: invalid JSON: %v", errBadRequest, err))
 		return
 	}
 	if req.Kind == "" {
-		err := fmt.Errorf("%w: kind is required", errConfigDBBadRequest)
+		err := fmt.Errorf("%w: kind is required", errBadRequest)
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
-	cfg, err := configDBNormalizeNumbers(req.Config)
+	cfg, err := normalizeNumbers(req.Config)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, fmt.Errorf("%w: %v", errConfigDBBadRequest, err))
+		writeError(deps, w, r, fmt.Errorf("%w: %v", errBadRequest, err))
 		return
 	}
 
-	dbPath := configDBPathFromRequest(r)
-	store, err := configDBOpenForWrite(ctx, dbPath)
+	dbPath := dbPathFromRequest(r)
+	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	defer store.Close()
@@ -169,10 +169,10 @@ func configDBUpdateAuthServiceHandler(s *Server, w http.ResponseWriter, r *http.
 	row, err := store.UpdateAuthService(ctx, name, req.Kind, cfg)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
-	render.JSON(w, r, configDBAuthServiceDTO{
+	render.JSON(w, r, AuthServiceDTO{
 		Name:      row.ID,
 		Kind:      row.Kind,
 		Config:    row.Config,
@@ -181,25 +181,25 @@ func configDBUpdateAuthServiceHandler(s *Server, w http.ResponseWriter, r *http.
 	})
 }
 
-func configDBDeleteAuthServiceHandler(s *Server, w http.ResponseWriter, r *http.Request) {
-	ctx, span := s.instrumentation.Tracer.Start(r.Context(), "toolbox/server/configdb/authservice/delete")
+func deleteAuthServiceHandler(deps Dependencies, w http.ResponseWriter, r *http.Request) {
+	ctx, span := deps.Tracer.Start(r.Context(), "toolbox/server/configdb/authservice/delete")
 	defer span.End()
 
 	name := chi.URLParam(r, "name")
 	span.SetAttributes(attribute.String("authservice_name", name))
 
-	dbPath := configDBPathFromRequest(r)
-	store, err := configDBOpenForWrite(ctx, dbPath)
+	dbPath := dbPathFromRequest(r)
+	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	defer store.Close()
 
 	if err := store.DeleteAuthService(ctx, name); err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

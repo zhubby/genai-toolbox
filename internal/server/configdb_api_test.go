@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/googleapis/genai-toolbox/internal/log"
+	"github.com/googleapis/genai-toolbox/internal/server/configdb"
 	"github.com/googleapis/genai-toolbox/internal/server/resources"
 	"github.com/googleapis/genai-toolbox/internal/telemetry"
 )
@@ -60,6 +61,24 @@ func TestConfigDBSourceCRUD(t *testing.T) {
 	ts := runServer(r, false)
 	defer ts.Close()
 
+	// Validate DB path before any CRUD
+	{
+		resp, body, err := runRequest(ts, http.MethodPost, "/config/validate?dbPath="+dbPathEsc, nil, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("unexpected status: %d body=%s", resp.StatusCode, string(body))
+		}
+		var got configdb.ValidateDBResponse
+		if err := json.Unmarshal(body, &got); err != nil {
+			t.Fatalf("unable to decode response: %v", err)
+		}
+		if !got.Available {
+			t.Fatalf("expected available=true, got: %+v", got)
+		}
+	}
+
 	// 初始 list：db 不存在时返回空列表
 	{
 		resp, body, err := runRequest(ts, http.MethodGet, "/config/sources?dbPath="+dbPathEsc, nil, nil)
@@ -69,7 +88,7 @@ func TestConfigDBSourceCRUD(t *testing.T) {
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("unexpected status: %d body=%s", resp.StatusCode, string(body))
 		}
-		var got []configDBSourceDTO
+		var got []configdb.SourceDTO
 		if err := json.Unmarshal(body, &got); err != nil {
 			t.Fatalf("unable to decode response: %v", err)
 		}
@@ -80,7 +99,7 @@ func TestConfigDBSourceCRUD(t *testing.T) {
 
 	// Create
 	{
-		reqBody, _ := json.Marshal(configDBCreateSourceRequest{
+		reqBody, _ := json.Marshal(configdb.CreateSourceRequest{
 			Name: "db1",
 			Kind: "postgres",
 			Config: map[string]any{
@@ -101,7 +120,7 @@ func TestConfigDBSourceCRUD(t *testing.T) {
 
 	// Conflict create same
 	{
-		reqBody, _ := json.Marshal(configDBCreateSourceRequest{Name: "db1", Kind: "postgres", Config: map[string]any{}})
+		reqBody, _ := json.Marshal(configdb.CreateSourceRequest{Name: "db1", Kind: "postgres", Config: map[string]any{}})
 		resp, _, err := runRequest(ts, http.MethodPost, "/config/sources?dbPath="+dbPathEsc, bytes.NewReader(reqBody), nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -120,7 +139,7 @@ func TestConfigDBSourceCRUD(t *testing.T) {
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("unexpected status: %d body=%s", resp.StatusCode, string(body))
 		}
-		var got configDBSourceDTO
+		var got configdb.SourceDTO
 		if err := json.Unmarshal(body, &got); err != nil {
 			t.Fatalf("unable to decode response: %v", err)
 		}
@@ -131,7 +150,7 @@ func TestConfigDBSourceCRUD(t *testing.T) {
 
 	// Update
 	{
-		reqBody, _ := json.Marshal(configDBUpdateSourceRequest{
+		reqBody, _ := json.Marshal(configdb.UpdateSourceRequest{
 			Kind: "postgres",
 			Config: map[string]any{
 				"kind": "postgres",
@@ -170,4 +189,3 @@ func TestConfigDBSourceCRUD(t *testing.T) {
 		}
 	}
 }
-

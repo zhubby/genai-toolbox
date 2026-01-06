@@ -1,8 +1,8 @@
-package server
+package configdb
 
 import "time"
 
-type configDBSourceDTO struct {
+type SourceDTO struct {
 	Name      string         `json:"name"`
 	Kind      string         `json:"kind"`
 	Config    map[string]any `json:"config"`
@@ -10,7 +10,7 @@ type configDBSourceDTO struct {
 	UpdatedAt time.Time      `json:"updatedAt"`
 }
 
-type configDBToolDTO struct {
+type ToolDTO struct {
 	Name       string         `json:"name"`
 	Kind       string         `json:"kind"`
 	SourceName *string        `json:"sourceName,omitempty"`
@@ -19,7 +19,7 @@ type configDBToolDTO struct {
 	UpdatedAt  time.Time      `json:"updatedAt"`
 }
 
-type configDBAuthServiceDTO struct {
+type AuthServiceDTO struct {
 	Name      string         `json:"name"`
 	Kind      string         `json:"kind"`
 	Config    map[string]any `json:"config"`
@@ -27,14 +27,14 @@ type configDBAuthServiceDTO struct {
 	UpdatedAt time.Time      `json:"updatedAt"`
 }
 
-type configDBToolsetDTO struct {
+type ToolsetDTO struct {
 	Name      string    `json:"name"`
 	ToolNames []string  `json:"toolNames"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
-type configDBPromptDTO struct {
+type PromptDTO struct {
 	Name      string         `json:"name"`
 	Kind      string         `json:"kind"`
 	Config    map[string]any `json:"config"`
@@ -42,74 +42,73 @@ type configDBPromptDTO struct {
 	UpdatedAt time.Time      `json:"updatedAt"`
 }
 
-type configDBPromptsetDTO struct {
+type PromptsetDTO struct {
 	Name        string    `json:"name"`
 	PromptNames []string  `json:"promptNames"`
 	CreatedAt   time.Time `json:"createdAt"`
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
-type configDBCreateSourceRequest struct {
+type CreateSourceRequest struct {
 	Name   string         `json:"name"`
 	Kind   string         `json:"kind"`
 	Config map[string]any `json:"config"`
 }
 
-type configDBUpdateSourceRequest struct {
+type UpdateSourceRequest struct {
 	Kind   string         `json:"kind"`
 	Config map[string]any `json:"config"`
 }
 
-type configDBCreateToolRequest struct {
+type CreateToolRequest struct {
 	Name       string         `json:"name"`
 	Kind       string         `json:"kind"`
 	SourceName *string        `json:"sourceName"`
 	Config     map[string]any `json:"config"`
 }
 
-type configDBUpdateToolRequest struct {
+type UpdateToolRequest struct {
 	Kind       string         `json:"kind"`
 	SourceName *string        `json:"sourceName"`
 	Config     map[string]any `json:"config"`
 }
 
-type configDBCreateAuthServiceRequest struct {
+type CreateAuthServiceRequest struct {
 	Name   string         `json:"name"`
 	Kind   string         `json:"kind"`
 	Config map[string]any `json:"config"`
 }
 
-type configDBUpdateAuthServiceRequest struct {
+type UpdateAuthServiceRequest struct {
 	Kind   string         `json:"kind"`
 	Config map[string]any `json:"config"`
 }
 
-type configDBCreateToolsetRequest struct {
+type CreateToolsetRequest struct {
 	Name      string   `json:"name"`
 	ToolNames []string `json:"toolNames"`
 }
 
-type configDBUpdateToolsetRequest struct {
+type UpdateToolsetRequest struct {
 	ToolNames []string `json:"toolNames"`
 }
 
-type configDBCreatePromptRequest struct {
+type CreatePromptRequest struct {
 	Name   string         `json:"name"`
 	Kind   string         `json:"kind"`
 	Config map[string]any `json:"config"`
 }
 
-type configDBUpdatePromptRequest struct {
+type UpdatePromptRequest struct {
 	Kind   string         `json:"kind"`
 	Config map[string]any `json:"config"`
 }
 
-type configDBCreatePromptsetRequest struct {
+type CreatePromptsetRequest struct {
 	Name        string   `json:"name"`
 	PromptNames []string `json:"promptNames"`
 }
 
-type configDBUpdatePromptsetRequest struct {
+type UpdatePromptsetRequest struct {
 	PromptNames []string `json:"promptNames"`
 }
-

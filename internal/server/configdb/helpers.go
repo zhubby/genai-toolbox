@@ -1,4 +1,4 @@
-package server
+package configdb
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"github.com/googleapis/genai-toolbox/internal/util"
 )
 
-func configDBPathFromRequest(r *http.Request) string {
+func dbPathFromRequest(r *http.Request) string {
 	if r == nil {
 		return ""
 	}
@@ -23,7 +23,7 @@ func configDBPathFromRequest(r *http.Request) string {
 	return r.URL.Query().Get("db_path")
 }
 
-func configDBOpenForRead(ctx context.Context, dbPath string) (*storage.Store, bool, error) {
+func openForRead(ctx context.Context, dbPath string) (*storage.Store, bool, error) {
 	exists, err := storage.Exists(dbPath)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to check db existence: %w", err)
@@ -38,21 +38,18 @@ func configDBOpenForRead(ctx context.Context, dbPath string) (*storage.Store, bo
 	return store, true, nil
 }
 
-func configDBOpenForWrite(ctx context.Context, dbPath string) (*storage.Store, error) {
+func openForWrite(ctx context.Context, dbPath string) (*storage.Store, error) {
 	return storage.Open(ctx, dbPath)
 }
 
-func configDBDecodeJSON(r *http.Request, v any) error {
+func decodeJSON(r *http.Request, v any) error {
 	if r == nil {
 		return fmt.Errorf("nil request")
 	}
-	if err := util.DecodeJSON(r.Body, v); err != nil {
-		return err
-	}
-	return nil
+	return util.DecodeJSON(r.Body, v)
 }
 
-func configDBNormalizeNumbers(m map[string]any) (map[string]any, error) {
+func normalizeNumbers(m map[string]any) (map[string]any, error) {
 	if m == nil {
 		return map[string]any{}, nil
 	}
@@ -67,7 +64,7 @@ func configDBNormalizeNumbers(m map[string]any) (map[string]any, error) {
 	return convertedMap, nil
 }
 
-func configDBWriteError(s *Server, w http.ResponseWriter, r *http.Request, err error) {
+func writeError(deps Dependencies, w http.ResponseWriter, r *http.Request, err error) {
 	if err == nil {
 		return
 	}
@@ -77,14 +74,13 @@ func configDBWriteError(s *Server, w http.ResponseWriter, r *http.Request, err e
 		status = http.StatusNotFound
 	case ent.IsConstraintError(err):
 		status = http.StatusConflict
-	case errors.Is(err, errConfigDBBadRequest):
+	case errors.Is(err, errBadRequest):
 		status = http.StatusBadRequest
 	}
-	if s != nil && s.logger != nil {
-		s.logger.DebugContext(r.Context(), err.Error())
+	if deps.Logger != nil {
+		deps.Logger.DebugContext(r.Context(), err.Error())
 	}
 	_ = render.Render(w, r, newErrResponse(err, status))
 }
 
-var errConfigDBBadRequest = errors.New("bad request")
-
+var errBadRequest = errors.New("bad request")

@@ -2137,3 +2137,30 @@ func TestDefaultToolsFileBehavior(t *testing.T) {
 		})
 	}
 }
+
+func TestConfigDBCreatesDBFileWhenMissing(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	defer cancel()
+
+	tmpDir, err := os.MkdirTemp("", "toolbox-configdb-create-*")
+	if err != nil {
+		t.Fatalf("unable to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dbPath := filepath.Join(tmpDir, "config.db")
+	if _, err := os.Stat(dbPath); err == nil {
+		t.Fatalf("expected dbPath not to exist yet: %s", dbPath)
+	}
+
+	_, output, err := invokeCommandWithContext(ctx, []string{"--config-db", dbPath, "--port", "0"})
+	if err != nil && err != context.DeadlineExceeded && err != context.Canceled {
+		t.Fatalf("unexpected error: %v\noutput:\n%s", err, output)
+	}
+	if !strings.Contains(output, "Server ready to serve!") {
+		t.Fatalf("server did not start successfully (no ready message found). Output:\n%s", output)
+	}
+	if _, err := os.Stat(dbPath); err != nil {
+		t.Fatalf("expected db file to be created, stat error: %v", err)
+	}
+}

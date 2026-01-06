@@ -1,4 +1,4 @@
-package server
+package configdb
 
 import (
 	"fmt"
@@ -10,19 +10,19 @@ import (
 	"go.opentelemetry.io/otel/codes"
 )
 
-func configDBListPromptsHandler(s *Server, w http.ResponseWriter, r *http.Request) {
-	ctx, span := s.instrumentation.Tracer.Start(r.Context(), "toolbox/server/configdb/prompt/list")
+func listPromptsHandler(deps Dependencies, w http.ResponseWriter, r *http.Request) {
+	ctx, span := deps.Tracer.Start(r.Context(), "toolbox/server/configdb/prompt/list")
 	defer span.End()
 
-	dbPath := configDBPathFromRequest(r)
-	store, ok, err := configDBOpenForRead(ctx, dbPath)
+	dbPath := dbPathFromRequest(r)
+	store, ok, err := openForRead(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	if !ok {
-		render.JSON(w, r, []configDBPromptDTO{})
+		render.JSON(w, r, []PromptDTO{})
 		return
 	}
 	defer store.Close()
@@ -30,12 +30,12 @@ func configDBListPromptsHandler(s *Server, w http.ResponseWriter, r *http.Reques
 	rows, err := store.ListPrompts(ctx)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
-	out := make([]configDBPromptDTO, 0, len(rows))
+	out := make([]PromptDTO, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, configDBPromptDTO{
+		out = append(out, PromptDTO{
 			Name:      row.ID,
 			Kind:      row.Kind,
 			Config:    row.Config,
@@ -46,18 +46,18 @@ func configDBListPromptsHandler(s *Server, w http.ResponseWriter, r *http.Reques
 	render.JSON(w, r, out)
 }
 
-func configDBGetPromptHandler(s *Server, w http.ResponseWriter, r *http.Request) {
-	ctx, span := s.instrumentation.Tracer.Start(r.Context(), "toolbox/server/configdb/prompt/get")
+func getPromptHandler(deps Dependencies, w http.ResponseWriter, r *http.Request) {
+	ctx, span := deps.Tracer.Start(r.Context(), "toolbox/server/configdb/prompt/get")
 	defer span.End()
 
 	name := chi.URLParam(r, "name")
 	span.SetAttributes(attribute.String("prompt_name", name))
 
-	dbPath := configDBPathFromRequest(r)
-	store, ok, err := configDBOpenForRead(ctx, dbPath)
+	dbPath := dbPathFromRequest(r)
+	store, ok, err := openForRead(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	if !ok {
@@ -71,10 +71,10 @@ func configDBGetPromptHandler(s *Server, w http.ResponseWriter, r *http.Request)
 	row, err := store.GetPrompt(ctx, name)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
-	render.JSON(w, r, configDBPromptDTO{
+	render.JSON(w, r, PromptDTO{
 		Name:      row.ID,
 		Kind:      row.Kind,
 		Config:    row.Config,
@@ -83,34 +83,34 @@ func configDBGetPromptHandler(s *Server, w http.ResponseWriter, r *http.Request)
 	})
 }
 
-func configDBCreatePromptHandler(s *Server, w http.ResponseWriter, r *http.Request) {
-	ctx, span := s.instrumentation.Tracer.Start(r.Context(), "toolbox/server/configdb/prompt/create")
+func createPromptHandler(deps Dependencies, w http.ResponseWriter, r *http.Request) {
+	ctx, span := deps.Tracer.Start(r.Context(), "toolbox/server/configdb/prompt/create")
 	defer span.End()
 
-	var req configDBCreatePromptRequest
-	if err := configDBDecodeJSON(r, &req); err != nil {
+	var req CreatePromptRequest
+	if err := decodeJSON(r, &req); err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, fmt.Errorf("%w: invalid JSON: %v", errConfigDBBadRequest, err))
+		writeError(deps, w, r, fmt.Errorf("%w: invalid JSON: %v", errBadRequest, err))
 		return
 	}
 	if req.Name == "" || req.Kind == "" {
-		err := fmt.Errorf("%w: name/kind is required", errConfigDBBadRequest)
+		err := fmt.Errorf("%w: name/kind is required", errBadRequest)
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
-	cfg, err := configDBNormalizeNumbers(req.Config)
+	cfg, err := normalizeNumbers(req.Config)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, fmt.Errorf("%w: %v", errConfigDBBadRequest, err))
+		writeError(deps, w, r, fmt.Errorf("%w: %v", errBadRequest, err))
 		return
 	}
 
-	dbPath := configDBPathFromRequest(r)
-	store, err := configDBOpenForWrite(ctx, dbPath)
+	dbPath := dbPathFromRequest(r)
+	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	defer store.Close()
@@ -118,11 +118,11 @@ func configDBCreatePromptHandler(s *Server, w http.ResponseWriter, r *http.Reque
 	row, err := store.CreatePrompt(ctx, req.Name, req.Kind, cfg)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	render.Status(r, http.StatusCreated)
-	render.JSON(w, r, configDBPromptDTO{
+	render.JSON(w, r, PromptDTO{
 		Name:      row.ID,
 		Kind:      row.Kind,
 		Config:    row.Config,
@@ -131,37 +131,37 @@ func configDBCreatePromptHandler(s *Server, w http.ResponseWriter, r *http.Reque
 	})
 }
 
-func configDBUpdatePromptHandler(s *Server, w http.ResponseWriter, r *http.Request) {
-	ctx, span := s.instrumentation.Tracer.Start(r.Context(), "toolbox/server/configdb/prompt/update")
+func updatePromptHandler(deps Dependencies, w http.ResponseWriter, r *http.Request) {
+	ctx, span := deps.Tracer.Start(r.Context(), "toolbox/server/configdb/prompt/update")
 	defer span.End()
 
 	name := chi.URLParam(r, "name")
 	span.SetAttributes(attribute.String("prompt_name", name))
 
-	var req configDBUpdatePromptRequest
-	if err := configDBDecodeJSON(r, &req); err != nil {
+	var req UpdatePromptRequest
+	if err := decodeJSON(r, &req); err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, fmt.Errorf("%w: invalid JSON: %v", errConfigDBBadRequest, err))
+		writeError(deps, w, r, fmt.Errorf("%w: invalid JSON: %v", errBadRequest, err))
 		return
 	}
 	if req.Kind == "" {
-		err := fmt.Errorf("%w: kind is required", errConfigDBBadRequest)
+		err := fmt.Errorf("%w: kind is required", errBadRequest)
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
-	cfg, err := configDBNormalizeNumbers(req.Config)
+	cfg, err := normalizeNumbers(req.Config)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, fmt.Errorf("%w: %v", errConfigDBBadRequest, err))
+		writeError(deps, w, r, fmt.Errorf("%w: %v", errBadRequest, err))
 		return
 	}
 
-	dbPath := configDBPathFromRequest(r)
-	store, err := configDBOpenForWrite(ctx, dbPath)
+	dbPath := dbPathFromRequest(r)
+	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	defer store.Close()
@@ -169,10 +169,10 @@ func configDBUpdatePromptHandler(s *Server, w http.ResponseWriter, r *http.Reque
 	row, err := store.UpdatePrompt(ctx, name, req.Kind, cfg)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
-	render.JSON(w, r, configDBPromptDTO{
+	render.JSON(w, r, PromptDTO{
 		Name:      row.ID,
 		Kind:      row.Kind,
 		Config:    row.Config,
@@ -181,25 +181,25 @@ func configDBUpdatePromptHandler(s *Server, w http.ResponseWriter, r *http.Reque
 	})
 }
 
-func configDBDeletePromptHandler(s *Server, w http.ResponseWriter, r *http.Request) {
-	ctx, span := s.instrumentation.Tracer.Start(r.Context(), "toolbox/server/configdb/prompt/delete")
+func deletePromptHandler(deps Dependencies, w http.ResponseWriter, r *http.Request) {
+	ctx, span := deps.Tracer.Start(r.Context(), "toolbox/server/configdb/prompt/delete")
 	defer span.End()
 
 	name := chi.URLParam(r, "name")
 	span.SetAttributes(attribute.String("prompt_name", name))
 
-	dbPath := configDBPathFromRequest(r)
-	store, err := configDBOpenForWrite(ctx, dbPath)
+	dbPath := dbPathFromRequest(r)
+	store, err := openForWrite(ctx, dbPath)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	defer store.Close()
 
 	if err := store.DeletePrompt(ctx, name); err != nil {
 		span.SetStatus(codes.Error, err.Error())
-		configDBWriteError(s, w, r, err)
+		writeError(deps, w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

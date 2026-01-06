@@ -24,6 +24,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
+	"github.com/googleapis/genai-toolbox/internal/server/configdb"
 	"github.com/googleapis/genai-toolbox/internal/tools"
 	"github.com/googleapis/genai-toolbox/internal/util"
 	"go.opentelemetry.io/otel/attribute"
@@ -39,7 +40,10 @@ func apiRouter(s *Server) (chi.Router, error) {
 	r.Use(middleware.StripSlashes)
 	r.Use(render.SetContentType(render.ContentTypeJSON))
 
-	r.Mount("/config", configDBRouter(s))
+	r.Mount("/config", configdb.Router(configdb.Dependencies{
+		Logger: s.logger,
+		Tracer: s.instrumentation.Tracer,
+	}))
 
 	r.Get("/toolset", func(w http.ResponseWriter, r *http.Request) { toolsetHandler(s, w, r) })
 	r.Get("/toolset/{toolsetName}", func(w http.ResponseWriter, r *http.Request) { toolsetHandler(s, w, r) })
