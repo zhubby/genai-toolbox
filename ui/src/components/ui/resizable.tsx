@@ -14,11 +14,15 @@ function ResizablePanelGroup({
   className,
   ...props
 }: React.ComponentProps<typeof PanelGroup>) {
+  const isVertical = (props as any)?.direction === "vertical";
   return (
     <PanelGroup
       data-slot="resizable-panel-group"
       className={cn(
-        "flex h-full w-full data-[panel-group-direction=vertical]:flex-col",
+        "flex h-full w-full",
+        isVertical ? "flex-col" : undefined,
+        // 兼容依赖 data 属性的样式（Tailwind v4 data 变体）
+        "data-[panel-group-direction=vertical]:flex-col",
         className
       )}
       {...props}

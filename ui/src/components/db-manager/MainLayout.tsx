@@ -6,6 +6,9 @@ import { SchemaViewer } from "./SchemaViewer"
 import { StatusBar } from "./StatusBar"
 import { Button } from "@/components/ui/button"
 import { PanelLeft, PanelRight } from "lucide-react"
+import { SqlEditor } from "./SqlEditor"
+import { ResultTable } from "./ResultTable"
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
 
 export function MainLayout() {
   const [showLeft, setShowLeft] = React.useState(true)
@@ -46,7 +49,17 @@ export function MainLayout() {
               <Sidebar className="h-full" />
             </div>
           )}
-          <div className="flex-1 min-w-0" />
+          <div className="flex-1 min-w-0">
+            <ResizablePanelGroup direction="vertical" className="flex h-full w-full">
+              <ResizablePanel defaultSize={55} minSize={25} className="min-h-0">
+                <SqlEditor />
+              </ResizablePanel>
+              <ResizableHandle withHandle />
+              <ResizablePanel defaultSize={45} minSize={25} className="min-h-0">
+                <ResultTable />
+              </ResizablePanel>
+            </ResizablePanelGroup>
+          </div>
           {showRight && (
             <div className="h-full border-l min-w-0" style={{ width: "25%" }}>
               <SchemaViewer />
