@@ -65,7 +65,7 @@ export function SqlEditor({ className }: SqlEditorProps) {
             </div>
         </div>
       </div>
-      <div className="flex-1 min-h-0 relative">
+      <div className="flex-1 min-h-0 relative overflow-hidden">
         <Editor
           height="100%"
           defaultLanguage="sql"
