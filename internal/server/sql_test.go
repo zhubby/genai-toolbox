@@ -190,7 +190,7 @@ func TestSQLExecute_LoadSourceFromConfigDB_WhenNotInResourceMgr(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to initialize logger: %s", err)
 	}
-	rm := resources.NewResourceManagerForDB(dbPath, inst.Tracer, fakeVersionString)
+	rm := resources.NewResourceManagerForDB(dbPath, inst.Tracer, nil, fakeVersionString)
 	srv := &Server{
 		version:         fakeVersionString,
 		logger:          testLogger,

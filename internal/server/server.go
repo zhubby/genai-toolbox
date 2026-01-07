@@ -340,7 +340,7 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*Server, error) {
 	// Default to in-memory snapshot for now; may be overridden.
 	// Use DB-backed resource manager so runtime always reflects config changes made via /api/config.
 	// This avoids folder watching and avoids keeping long-lived initialized resources in memory.
-	resourceManager := resources.NewResourceManagerForDB(cfg.ConfigDBPath, instrumentation.Tracer, cfg.Version)
+	resourceManager := resources.NewResourceManagerForDB(cfg.ConfigDBPath, instrumentation.Tracer, l, cfg.Version)
 
 	s := &Server{
 		version:         cfg.Version,

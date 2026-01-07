@@ -580,7 +580,7 @@ func loadAndMergeToolsFolder(ctx context.Context, folderPath string) (ToolsFile,
 	return loadAndMergeToolsFiles(ctx, allFiles)
 }
 
-func handleDynamicReload(ctx context.Context, toolsFile ToolsFile, s *server.Server) error {
+func handleDynamicReload(ctx context.Context, toolsFile ToolsFile, s *server.Server, dbPath string) error {
 	logger, err := util.LoggerFromContext(ctx)
 	if err != nil {
 		panic(err)
@@ -607,9 +607,118 @@ func handleDynamicReload(ctx context.Context, toolsFile ToolsFile, s *server.Ser
 	}
 	if rs, ok := any(s.ResourceMgr).(resourceSetter); ok {
 		rs.SetResources(sourcesMap, authServicesMap, toolsMap, toolsetsMap, promptsMap, promptsetsMap)
+		return nil
 	}
 
+	// DB-backed ResourceManager reads from config DB on demand; on reload we persist the merged config
+	// so runtime calls reflect changes immediately.
+	override, err := toolsFileToConfigData(toolsFile)
+	if err != nil {
+		logger.WarnContext(ctx, err.Error())
+		return err
+	}
+	if err := mergeAndPersistToDB(ctx, dbPath, override); err != nil {
+		logger.WarnContext(ctx, "failed to persist reloaded configuration to database: %v", err)
+		return err
+	}
 	return nil
+}
+
+func resolveConfigDBPath(hasAnyConfigParam bool, hasYAMLInput bool, explicitDBPath string) (string, error) {
+	if explicitDBPath != "" {
+		return explicitDBPath, nil
+	}
+	// Default to local config DB if:
+	// - no config parameters are provided (SQLite default mode), OR
+	// - YAML input is provided (tools-file/files/folder or prebuilt) so we can persist and serve consistently from DB.
+	if !hasAnyConfigParam || hasYAMLInput {
+		return storage.DefaultDBPath()
+	}
+	return "", nil
+}
+
+func toolsFileToConfigData(tf ToolsFile) (*storage.ConfigData, error) {
+	if tf.Sources == nil && tf.AuthServices == nil && tf.AuthSources == nil && tf.Tools == nil && tf.Toolsets == nil && tf.Prompts == nil {
+		return &storage.ConfigData{
+			SourceConfigs:      make(map[string]sources.SourceConfig),
+			AuthServiceConfigs: make(map[string]auth.AuthServiceConfig),
+			ToolConfigs:        make(map[string]tools.ToolConfig),
+			ToolsetConfigs:     make(map[string]tools.ToolsetConfig),
+			PromptConfigs:      make(map[string]prompts.PromptConfig),
+		}, nil
+	}
+
+	// Merge deprecated authSources into authServices (fail on name conflict, same as startup logic).
+	mergedAuth := make(server.AuthServiceConfigs)
+	for k, v := range tf.AuthServices {
+		mergedAuth[k] = v
+	}
+	if tf.AuthSources != nil {
+		for k, v := range tf.AuthSources {
+			if _, exists := mergedAuth[k]; exists {
+				return nil, fmt.Errorf("resource conflict detected: authSource %q has the same name as an existing authService. Please rename your authSource", k)
+			}
+			mergedAuth[k] = v
+		}
+	}
+
+	out := &storage.ConfigData{
+		SourceConfigs:      make(map[string]sources.SourceConfig),
+		AuthServiceConfigs: make(map[string]auth.AuthServiceConfig),
+		ToolConfigs:        make(map[string]tools.ToolConfig),
+		ToolsetConfigs:     make(map[string]tools.ToolsetConfig),
+		PromptConfigs:      make(map[string]prompts.PromptConfig),
+	}
+	for k, v := range tf.Sources {
+		out.SourceConfigs[k] = v
+	}
+	for k, v := range mergedAuth {
+		out.AuthServiceConfigs[k] = v
+	}
+	for k, v := range tf.Tools {
+		out.ToolConfigs[k] = v
+	}
+	for k, v := range tf.Toolsets {
+		out.ToolsetConfigs[k] = v
+	}
+	for k, v := range tf.Prompts {
+		out.PromptConfigs[k] = v
+	}
+	return out, nil
+}
+
+func mergeAndPersistToDB(ctx context.Context, dbPath string, override *storage.ConfigData) error {
+	if override == nil {
+		return nil
+	}
+	if dbPath == "" {
+		var err error
+		dbPath, err = storage.DefaultDBPath()
+		if err != nil {
+			return err
+		}
+	}
+
+	store, err := storage.Open(ctx, dbPath)
+	if err != nil {
+		return err
+	}
+	defer store.Close() //nolint:errcheck
+
+	data, err := store.LoadToolsFileData(ctx)
+	if err != nil {
+		return err
+	}
+	base := &storage.ConfigData{
+		SourceConfigs:      data.Sources,
+		AuthServiceConfigs: data.AuthServices,
+		ToolConfigs:        data.Tools,
+		ToolsetConfigs:     data.Toolsets,
+		PromptConfigs:      data.Prompts,
+	}
+
+	merged := storage.MergeConfigs(base, override) // YAML override wins
+	return saveMergedConfigToDB(ctx, dbPath, merged)
 }
 
 // validateReloadEdits checks that the reloaded tools file configs can initialized without failing
@@ -652,7 +761,7 @@ func validateReloadEdits(
 }
 
 // watchChanges checks for changes in the provided yaml tools file(s) or folder.
-func watchChanges(ctx context.Context, watchDirs map[string]bool, watchedFiles map[string]bool, s *server.Server) {
+func watchChanges(ctx context.Context, watchDirs map[string]bool, watchedFiles map[string]bool, s *server.Server, dbPath string) {
 	logger, err := util.LoggerFromContext(ctx)
 	if err != nil {
 		panic(err)
@@ -757,7 +866,7 @@ func watchChanges(ctx context.Context, watchDirs map[string]bool, watchedFiles m
 				}
 			}
 
-			err = handleDynamicReload(ctx, reloadedToolsFile, s)
+			err = handleDynamicReload(ctx, reloadedToolsFile, s, dbPath)
 			if err != nil {
 				errMsg := fmt.Errorf("unable to parse reloaded tools file at %q: %w", reloadedToolsFile, err)
 				logger.WarnContext(ctx, errMsg.Error())
@@ -869,18 +978,13 @@ func run(cmd *Command) error {
 
 	// Load configuration from SQLite database
 	var dbConfig *storage.ConfigData
-	dbPath := cmd.config_db
-
-	// If no config parameters provided, default to SQLite mode
-	if !hasAnyConfigParam {
-		// Use default database path, create if not exists
-		var err error
-		dbPath, err = storage.DefaultDBPath()
-		if err != nil {
-			errMsg := fmt.Errorf("failed to get default database path: %w", err)
-			cmd.logger.ErrorContext(ctx, errMsg.Error())
-			return errMsg
-		}
+	dbPath, err := resolveConfigDBPath(hasAnyConfigParam, hasPrebuilt || hasCustomFiles, cmd.config_db)
+	if err != nil {
+		errMsg := fmt.Errorf("failed to resolve config db path: %w", err)
+		cmd.logger.ErrorContext(ctx, errMsg.Error())
+		return errMsg
+	}
+	if dbPath != "" && !hasAnyConfigParam {
 		cmd.logger.InfoContext(ctx, fmt.Sprintf("No configuration parameters provided, using default SQLite database: %s", dbPath))
 	}
 
@@ -1167,7 +1271,7 @@ func run(cmd *Command) error {
 	if isCustomConfigured && !cmd.cfg.DisableReload {
 		watchDirs, watchedFiles := resolveWatcherInputs(cmd.tools_file, cmd.tools_files, cmd.tools_folder)
 		// start watching the file(s) or folder for changes to trigger dynamic reloading
-		go watchChanges(ctx, watchDirs, watchedFiles, s)
+		go watchChanges(ctx, watchDirs, watchedFiles, s, cmd.cfg.ConfigDBPath)
 	}
 
 	// wait for either the server to error out or the command's context to be canceled

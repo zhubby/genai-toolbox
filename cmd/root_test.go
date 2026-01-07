@@ -1293,7 +1293,7 @@ func TestSingleEdit(t *testing.T) {
 	watchedFiles := map[string]bool{cleanFileToWatch: true}
 	watchDirs := map[string]bool{watchDir: true}
 
-	go watchChanges(ctx, watchDirs, watchedFiles, mockServer)
+	go watchChanges(ctx, watchDirs, watchedFiles, mockServer, filepath.Join(t.TempDir(), "config.db"))
 
 	// escape backslash so regex doesn't fail on windows filepaths
 	regexEscapedPathFile := strings.ReplaceAll(cleanFileToWatch, `\`, `\\\\*\\`)

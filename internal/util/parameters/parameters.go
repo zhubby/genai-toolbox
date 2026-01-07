@@ -300,10 +300,9 @@ func ParseParameter(ctx context.Context, p map[string]any, paramType string) (Pa
 	if err != nil {
 		return nil, fmt.Errorf("error creating decoder: %w", err)
 	}
-	logger, err := util.LoggerFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
+	// Logger is optional here: it is only used to emit deprecation warnings.
+	// Do not fail decoding just because the caller didn't attach a logger to ctx.
+	logger, _ := util.LoggerFromContext(ctx)
 	switch paramType {
 	case TypeString:
 		a := &StringParameter{}
@@ -311,7 +310,9 @@ func ParseParameter(ctx context.Context, p map[string]any, paramType string) (Pa
 			return nil, fmt.Errorf("unable to parse as %q: %w", paramType, err)
 		}
 		if a.AuthSources != nil {
-			logger.WarnContext(ctx, "`authSources` is deprecated, use `authServices` for parameters instead")
+			if logger != nil {
+				logger.WarnContext(ctx, "`authSources` is deprecated, use `authServices` for parameters instead")
+			}
 			a.AuthServices = append(a.AuthServices, a.AuthSources...)
 			a.AuthSources = nil
 		}
@@ -322,7 +323,9 @@ func ParseParameter(ctx context.Context, p map[string]any, paramType string) (Pa
 			return nil, fmt.Errorf("unable to parse as %q: %w", paramType, err)
 		}
 		if a.AuthSources != nil {
-			logger.WarnContext(ctx, "`authSources` is deprecated, use `authServices` for parameters instead")
+			if logger != nil {
+				logger.WarnContext(ctx, "`authSources` is deprecated, use `authServices` for parameters instead")
+			}
 			a.AuthServices = append(a.AuthServices, a.AuthSources...)
 			a.AuthSources = nil
 		}
@@ -333,7 +336,9 @@ func ParseParameter(ctx context.Context, p map[string]any, paramType string) (Pa
 			return nil, fmt.Errorf("unable to parse as %q: %w", paramType, err)
 		}
 		if a.AuthSources != nil {
-			logger.WarnContext(ctx, "`authSources` is deprecated, use `authServices` for parameters instead")
+			if logger != nil {
+				logger.WarnContext(ctx, "`authSources` is deprecated, use `authServices` for parameters instead")
+			}
 			a.AuthServices = append(a.AuthServices, a.AuthSources...)
 			a.AuthSources = nil
 		}
@@ -344,7 +349,9 @@ func ParseParameter(ctx context.Context, p map[string]any, paramType string) (Pa
 			return nil, fmt.Errorf("unable to parse as %q: %w", paramType, err)
 		}
 		if a.AuthSources != nil {
-			logger.WarnContext(ctx, "`authSources` is deprecated, use `authServices` for parameters instead")
+			if logger != nil {
+				logger.WarnContext(ctx, "`authSources` is deprecated, use `authServices` for parameters instead")
+			}
 			a.AuthServices = append(a.AuthServices, a.AuthSources...)
 			a.AuthSources = nil
 		}
@@ -355,7 +362,9 @@ func ParseParameter(ctx context.Context, p map[string]any, paramType string) (Pa
 			return nil, fmt.Errorf("unable to parse as %q: %w", paramType, err)
 		}
 		if a.AuthSources != nil {
-			logger.WarnContext(ctx, "`authSources` is deprecated, use `authServices` for parameters instead")
+			if logger != nil {
+				logger.WarnContext(ctx, "`authSources` is deprecated, use `authServices` for parameters instead")
+			}
 			a.AuthServices = append(a.AuthServices, a.AuthSources...)
 			a.AuthSources = nil
 		}
@@ -366,7 +375,9 @@ func ParseParameter(ctx context.Context, p map[string]any, paramType string) (Pa
 			return nil, fmt.Errorf("unable to parse as %q: %w", paramType, err)
 		}
 		if a.AuthSources != nil {
-			logger.WarnContext(ctx, "`authSources` is deprecated, use `authServices` for parameters instead")
+			if logger != nil {
+				logger.WarnContext(ctx, "`authSources` is deprecated, use `authServices` for parameters instead")
+			}
 			a.AuthServices = append(a.AuthServices, a.AuthSources...)
 			a.AuthSources = nil
 		}

@@ -26,3 +26,7 @@ toolbox
 /*.db
 
 /.gocache
+
+/.cache
+
+/*.db-*
