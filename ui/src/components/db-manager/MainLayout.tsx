@@ -6,14 +6,26 @@ import { SchemaViewer } from "./SchemaViewer"
 import { StatusBar } from "./StatusBar"
 import { DbManagerProvider } from "./context"
 import { Button } from "@/components/ui/button"
-import { PanelLeft, PanelRight } from "lucide-react"
+import { PanelLeft, PanelRight, Settings, Package, MessageSquareText } from "lucide-react"
 import { SqlEditor } from "./SqlEditor"
 import { ResultTable } from "./ResultTable"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
+import { ToolsetsDialog } from "./ToolsetsDialog"
+import { PromptsetsDialog } from "./PromptsetsDialog"
 
 export function MainLayout() {
   const [showLeft, setShowLeft] = React.useState(true)
   const [showRight, setShowRight] = React.useState(true)
+  const [gearOpen, setGearOpen] = React.useState(false)
+  const [toolsetsOpen, setToolsetsOpen] = React.useState(false)
+  const [promptsetsOpen, setPromptsetsOpen] = React.useState(false)
+
+  React.useEffect(() => {
+    if (!gearOpen) return
+    const onDocClick = () => setGearOpen(false)
+    document.addEventListener("click", onDocClick)
+    return () => document.removeEventListener("click", onDocClick)
+  }, [gearOpen])
 
   return (
     <DbManagerProvider>
@@ -42,6 +54,58 @@ export function MainLayout() {
             >
               <PanelRight className="w-4 h-4" />
             </Button>
+
+            <div className="relative">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8"
+                title="设置"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setGearOpen((v) => !v)
+                }}
+              >
+                <Settings className="w-4 h-4" />
+              </Button>
+              {gearOpen && (
+                <div
+                  className="absolute right-0 top-10 z-50 w-48 rounded-md border bg-background shadow-md overflow-hidden"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <button
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted"
+                    onClick={() => {
+                      setGearOpen(false)
+                      setToolsetsOpen(true)
+                    }}
+                  >
+                    <Package className="w-4 h-4 text-muted-foreground" />
+                    工具集合
+                  </button>
+                  <button
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted"
+                    onClick={() => {
+                      setGearOpen(false)
+                      setPromptsetsOpen(true)
+                    }}
+                  >
+                    <MessageSquareText className="w-4 h-4 text-muted-foreground" />
+                    Prompt 集合
+                  </button>
+                  <button
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:bg-muted"
+                    onClick={() => {
+                      setGearOpen(false)
+                      alert("设置暂未实现")
+                    }}
+                  >
+                    <Settings className="w-4 h-4 text-muted-foreground" />
+                    设置
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </header>
         <div className="flex-1 overflow-hidden min-w-0">
@@ -71,6 +135,9 @@ export function MainLayout() {
         </div>
         <StatusBar />
       </div>
+
+      <ToolsetsDialog open={toolsetsOpen} onOpenChange={setToolsetsOpen} />
+      <PromptsetsDialog open={promptsetsOpen} onOpenChange={setPromptsetsOpen} />
     </DbManagerProvider>
   )
 }
