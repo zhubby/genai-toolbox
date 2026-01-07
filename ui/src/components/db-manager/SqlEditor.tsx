@@ -2,14 +2,14 @@
 
 import * as React from "react"
 import Editor from "@monaco-editor/react"
-import { Play, Eraser, FileCode, Save, Loader2, Database } from "lucide-react"
+import { Braces, Play, Eraser, FileCode, Save, Loader2, Database } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 import { useDbManager } from "./context"
-import { createTool, executeSQL, updateTool } from "@/lib/api"
+import { createTool, executeSQL, listToolKinds, updateTool } from "@/lib/api"
 
 interface SqlEditorProps {
   className?: string
@@ -77,18 +77,42 @@ export function SqlEditor({ className }: SqlEditorProps) {
   const [saveError, setSaveError] = React.useState<string | null>(null)
   const [runError, setRunError] = React.useState<string | null>(null)
   const [monaco, setMonaco] = React.useState<any>(null)
+  const suppressStatementResetRef = React.useRef(false)
+  const editorRef = React.useRef<any>(null)
 
   const [toolName, setToolName] = React.useState("")
   const [description, setDescription] = React.useState("")
+  const [kind, setKind] = React.useState("postgres-sql")
+  const [kindOptions, setKindOptions] = React.useState<string[]>(["postgres-sql"])
   const [parameters, setParameters] = React.useState<ParamDef[]>([])
   const [parsedParamMax, setParsedParamMax] = React.useState(0)
   const [parseError, setParseError] = React.useState<string | null>(null)
 
-  const { selectedSource, reloadTools, setPreview } = useDbManager()
+  const { selectedSource, selectedTool, reloadTools, setPreview } = useDbManager()
 
   const dbName = typeof selectedSource?.config?.database === "string" ? selectedSource?.config?.database : ""
   const connLabel = selectedSource?.name ? `${selectedSource.name}${dbName ? ` / ${dbName}` : ""}` : "未选择数据库"
-  const toolKind = selectedSource?.kind === "mysql" ? "mysql-sql" : "postgres-sql"
+  const enforcePostgresParams = kind === "postgres-sql" || kind === "postgres-execute-sql"
+
+  React.useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const postgresKinds = await listToolKinds("postgres")
+        const uniq = Array.from(new Set(["postgres-sql", ...postgresKinds]))
+        if (!cancelled) setKindOptions(uniq)
+      } catch {
+        // ignore
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  React.useEffect(() => {
+    setKindOptions((prev) => (prev.includes(kind) ? prev : [kind, ...prev]))
+  }, [kind])
 
   React.useEffect(() => {
     if (!selectedSource?.name) return
@@ -101,6 +125,66 @@ export function SqlEditor({ className }: SqlEditorProps) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSource?.name])
+
+  const handleFormatSql = async () => {
+    const editor = editorRef.current
+    if (!editor) return
+    try {
+      const action = editor.getAction?.("editor.action.formatDocument")
+      if (action?.run) await action.run()
+    } catch {
+      // ignore formatting errors
+    } finally {
+      try {
+        const v = editor.getValue?.()
+        if (typeof v === "string") setStatement(v)
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  const handleClear = () => {
+    setSaveError(null)
+    setRunError(null)
+    setParseError(null)
+    setPreview({ status: "idle", data: null, error: null })
+    setStatement("")
+    setParameters([])
+    setParsedParamMax(0)
+  }
+
+  // 点击右侧 tool 后，将其内容回填到编辑器
+  React.useEffect(() => {
+    if (!selectedTool) return
+    const cfg: Record<string, any> = selectedTool.config || {}
+    const nextStatement = typeof cfg.statement === "string" ? cfg.statement : ""
+    const nextDescription = typeof cfg.description === "string" ? cfg.description : ""
+    const rawParams = Array.isArray(cfg.parameters) ? cfg.parameters : []
+
+    setToolName(selectedTool.name || "")
+    setKind(selectedTool.kind || "postgres-sql")
+    setDescription(nextDescription)
+    suppressStatementResetRef.current = true
+    setStatement(nextStatement)
+    setParameters(
+      rawParams.map((p: any, idx: number) => ({
+        name: typeof p?.name === "string" ? p.name : `param_${idx + 1}`,
+        type: (typeof p?.type === "string" ? p.type : "string") as ParamType,
+        description: typeof p?.description === "string" ? p.description : "",
+        required: typeof p?.required === "boolean" ? p.required : undefined,
+        default: p?.default,
+        value: "",
+      })),
+    )
+
+    const max = extractPostgresParamMaxIndex(nextStatement, monaco).max
+    setParsedParamMax(max > 0 ? max : rawParams.length)
+    setParseError(null)
+    setSaveError(null)
+    setRunError(null)
+    setPreview({ status: "idle", data: null, error: null })
+  }, [selectedTool, monaco, setPreview])
 
   function parseParamValue(p: ParamDef): any {
     const raw = (p.value ?? "").trim()
@@ -183,6 +267,10 @@ export function SqlEditor({ className }: SqlEditorProps) {
   // Requirement: parameters editor is only shown after clicking Parse.
   // Any statement edits invalidate the parsed result.
   React.useEffect(() => {
+    if (suppressStatementResetRef.current) {
+      suppressStatementResetRef.current = false
+      return
+    }
     setParsedParamMax(0)
     setParseError(null)
   }, [statement])
@@ -240,10 +328,13 @@ export function SqlEditor({ className }: SqlEditorProps) {
     if (!selectedSource?.name) errs.push("请先选择一个数据库 source")
     if (!toolName.trim()) errs.push("Tool name 必填")
     if (!description.trim()) errs.push("Description 必填")
-    if (!statement.trim()) errs.push("Statement 不能为空")
+    const requiresStatement =
+      kind === "postgres-sql" || kind === "mysql-sql" || kind === "postgres-execute-sql" || kind === "mysql-execute-sql"
+    const enforcePostgresParams = kind === "postgres-sql" || kind === "postgres-execute-sql"
+    if (requiresStatement && !statement.trim()) errs.push("Statement 不能为空")
 
-    const max = postgresParamInfo.max
-    if (max > 0) {
+    const max = enforcePostgresParams ? postgresParamInfo.max : 0
+    if (enforcePostgresParams && max > 0) {
       // Must click Parse to generate the parameter rows.
       if (parsedParamMax !== max) {
         errs.push("请先点击 Parse 解析 SQL 占位符（$n）")
@@ -289,7 +380,7 @@ export function SqlEditor({ className }: SqlEditorProps) {
 
     const cfg = {
       name: toolName.trim(),
-      kind: toolKind,
+      kind,
       source: selectedSource.name,
       description: description.trim(),
       statement,
@@ -307,7 +398,7 @@ export function SqlEditor({ className }: SqlEditorProps) {
       try {
         await createTool({
           name: toolName.trim(),
-          kind: toolKind,
+          kind,
           sourceName: selectedSource.name,
           config: cfg,
         })
@@ -316,7 +407,7 @@ export function SqlEditor({ className }: SqlEditorProps) {
         const msg = e?.message || String(e)
         if (String(msg).includes("409")) {
           await updateTool(toolName.trim(), {
-            kind: toolKind,
+            kind,
             sourceName: selectedSource.name,
             config: cfg,
           })
@@ -335,41 +426,98 @@ export function SqlEditor({ className }: SqlEditorProps) {
   return (
     <div className={cn("flex flex-col h-full bg-background min-w-0", className)}>
       <div className="flex items-center justify-between p-2 border-b bg-muted/10 h-12">
-        <div className="flex items-center gap-2">
-           <Button 
-                size="sm" 
-                className="bg-green-600 hover:bg-green-700 text-white gap-2 h-8 px-3 font-semibold shadow-sm transition-all"
-                onClick={handleRun}
-                disabled={isRunning}
-            >
-             {isRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-current" />}
-             {isRunning ? 'Running' : 'Run'}
-           </Button>
-           <Separator orientation="vertical" className="h-6 mx-1" />
-           <Button
-             variant="outline"
-             size="sm"
-             className="gap-2 h-8 text-muted-foreground hover:text-foreground"
-             onClick={handleSave}
-             disabled={isSaving}
-           >
-             {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save
-           </Button>
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <Input
+            value={toolName}
+            onChange={(e) => setToolName(e.target.value)}
+            placeholder="Tool name"
+            className="h-8 text-xs w-[180px] font-mono"
+          />
+          <Input
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Description"
+            className="h-8 text-xs w-[220px]"
+          />
+          <Select
+            value={kind}
+            onValueChange={(v) => {
+              setKind(v)
+              setParseError(null)
+              setParsedParamMax(0)
+            }}
+          >
+            <SelectTrigger className="h-8 w-[220px] text-xs font-mono">
+              <SelectValue placeholder="Kind" />
+            </SelectTrigger>
+            <SelectContent>
+              {kindOptions.map((k) => (
+                <SelectItem key={k} value={k} className="font-mono text-xs">
+                  {k}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <div className="flex items-center gap-2 bg-muted/50 px-2 py-1 rounded border text-xs text-muted-foreground min-w-0">
+            <Database className="w-3 h-3 shrink-0" />
+            <span className="truncate max-w-[260px]">{connLabel}</span>
+          </div>
         </div>
-        
-        <div className="flex items-center gap-2">
-            <div className="flex items-center gap-2 mr-2 bg-muted/50 px-2 py-1 rounded border text-xs text-muted-foreground">
-                <Database className="w-3 h-3" />
-                <span className="truncate max-w-[220px]">{connLabel}</span>
-            </div>
-            <div className="flex gap-1 ml-1">
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" title="Format SQL">
-                    <FileCode className="w-4 h-4" />
-                </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" title="Clear">
-                    <Eraser className="w-4 h-4" />
-                </Button>
-            </div>
+
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+            title="运行"
+            onClick={handleRun}
+            disabled={isRunning}
+          >
+            {isRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+            title="保存"
+            onClick={handleSave}
+            disabled={isSaving}
+          >
+            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          </Button>
+          {enforcePostgresParams ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+              title="解析参数（$n）"
+              onClick={handleParse}
+              disabled={!statement.trim()}
+            >
+              <Braces className="w-4 h-4" />
+            </Button>
+          ) : null}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+            title="美化 SQL"
+            onClick={handleFormatSql}
+            disabled={!statement.trim()}
+          >
+            <FileCode className="w-4 h-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+            title="清空输入"
+            onClick={handleClear}
+            disabled={!statement.trim() && parameters.length === 0}
+          >
+            <Eraser className="w-4 h-4" />
+          </Button>
         </div>
       </div>
       <div className="flex-1 relative overflow-hidden min-h-0 min-w-0">
@@ -380,7 +528,10 @@ export function SqlEditor({ className }: SqlEditorProps) {
             defaultLanguage="sql"
             value={statement}
             onChange={(value) => setStatement(value || "")}
-            onMount={(_, m) => setMonaco(m)}
+            onMount={(editor, m) => {
+              editorRef.current = editor
+              setMonaco(m)
+            }}
             theme="vs-light" 
             options={{
                 minimap: { enabled: false },
@@ -402,53 +553,18 @@ export function SqlEditor({ className }: SqlEditorProps) {
         {parseError && <div className="text-xs text-red-600">{parseError}</div>}
         {runError && <div className="text-xs text-red-600">{runError}</div>}
 
-        <div className="grid grid-cols-6 gap-2 items-center">
-          <div className="col-span-2 text-xs text-muted-foreground">Tool name</div>
-          <div className="col-span-4">
-            <Input
-              value={toolName}
-              onChange={(e) => setToolName(e.target.value)}
-              placeholder="例如：list_users"
-              className="h-8 text-xs"
-            />
-          </div>
-
-          <div className="col-span-2 text-xs text-muted-foreground">Description</div>
-          <div className="col-span-4">
-            <Input
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="例如：列出用户（示例）"
-              className="h-8 text-xs"
-            />
-          </div>
-        </div>
-
-        <div className="text-xs text-muted-foreground">
-          Kind：<span className="font-mono text-foreground">{toolKind}</span>
-          {parsedParamMax > 0 ? <span className="ml-2">（已解析 $1..$${parsedParamMax}）</span> : null}
-        </div>
-
         <Separator />
 
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <div className="text-sm font-medium">Parameters（Parse 后展示，$n）</div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 gap-2 text-xs"
-              onClick={handleParse}
-            >
-              Parse
-            </Button>
+            <div className="text-sm font-medium">Parameters</div>
           </div>
-          {!statement.trim() || parsedParamMax === 0 ? null : (
-            <div className="space-y-2">
+          {!enforcePostgresParams || !statement.trim() || parsedParamMax === 0 ? null : (
+            <div className="rounded-md border bg-background divide-y">
               {Array.from({ length: parsedParamMax }, (_, idx) => {
                 const p = parameters[idx]
                 return (
-                  <div key={idx} className="grid grid-cols-14 gap-2 items-center">
+                  <div key={idx} className="grid grid-cols-14 gap-2 items-center px-2 py-2">
                     <div className="col-span-2 text-xs font-mono text-muted-foreground">{`$${idx + 1}`}</div>
                     <div className="col-span-3">
                       <Input

@@ -33,6 +33,19 @@ type ToolConfigFactory func(ctx context.Context, name string, decoder *yaml.Deco
 
 var toolRegistry = make(map[string]ToolConfigFactory)
 
+// RegisteredKinds returns all registered tool kinds, optionally filtered by a prefix.
+// The returned slice is sorted for stable output.
+func RegisteredKinds(prefix string) []string {
+	kinds := make([]string, 0, len(toolRegistry))
+	for k := range toolRegistry {
+		if prefix == "" || strings.HasPrefix(k, prefix) {
+			kinds = append(kinds, k)
+		}
+	}
+	slices.Sort(kinds)
+	return kinds
+}
+
 // Register allows individual tool packages to register their configuration
 // factory function. This is typically called from an init() function in the
 // tool's package. It associates a 'kind' string with a function that can

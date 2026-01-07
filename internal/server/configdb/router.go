@@ -35,6 +35,7 @@ func Router(deps Dependencies) chi.Router {
 
 	// Tools
 	r.Route("/tools", func(r chi.Router) {
+		r.Get("/kinds", func(w http.ResponseWriter, r *http.Request) { listToolKindsHandler(deps, w, r) })
 		r.Get("/", func(w http.ResponseWriter, r *http.Request) { listToolsHandler(deps, w, r) })
 		r.Post("/", func(w http.ResponseWriter, r *http.Request) { createToolHandler(deps, w, r) })
 		r.Route("/{name}", func(r chi.Router) {

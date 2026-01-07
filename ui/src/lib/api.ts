@@ -127,3 +127,10 @@ export async function updateTool(
   if (!res.ok) throw new Error(`updateTool failed: ${res.status}`)
   return res.json()
 }
+
+export async function listToolKinds(prefix?: string): Promise<string[]> {
+  const qs = prefix ? `?prefix=${encodeURIComponent(prefix)}` : ""
+  const res = await fetch(`${BASE}/tools/kinds${qs}`, { cache: "no-store" })
+  if (!res.ok) throw new Error(`listToolKinds failed: ${res.status}`)
+  return res.json()
+}

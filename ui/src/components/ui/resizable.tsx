@@ -67,21 +67,21 @@ function ResizableHandle({
         // 纵向分隔条
         "data-[panel-group-direction=vertical]:h-1.5 data-[panel-group-direction=vertical]:w-full data-[panel-group-direction=vertical]:cursor-row-resize",
         // 细线视觉（通过 after 伪元素）
-        "after:absolute after:bg-border/60 after:transition-colors",
+        "after:content-[''] after:absolute after:z-0 after:pointer-events-none after:bg-border/70 after:transition-colors",
         "hover:after:bg-primary/40",
         "data-[panel-group-direction=horizontal]:after:inset-y-0 data-[panel-group-direction=horizontal]:after:left-1/2 data-[panel-group-direction=horizontal]:after:w-px data-[panel-group-direction=horizontal]:after:-translate-x-1/2",
         "data-[panel-group-direction=vertical]:after:inset-x-0 data-[panel-group-direction=vertical]:after:top-1/2 data-[panel-group-direction=vertical]:after:h-px data-[panel-group-direction=vertical]:after:-translate-y-1/2",
         // 焦点可见性
         "focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:outline-hidden",
-        // 可选的抓手图标容器在纵向时旋转
-        "[&[data-panel-group-direction=vertical]>div]:rotate-90",
+        // 纵向分隔（上下拖拽）时将 grip 图标旋转为横向
+        "data-[panel-group-direction=vertical]:[&>div>svg]:rotate-90",
         className
       )}
       {...props}
     >
       {withHandle && (
-        <div className="bg-muted/80 hover:bg-muted z-10 flex h-5 w-1 items-center justify-center rounded-full transition-colors data-[panel-group-direction=vertical]:h-1 data-[panel-group-direction=vertical]:w-5">
-          <GripVerticalIcon className="size-2 text-muted-foreground/60" />
+        <div className="z-10 flex h-5 w-5 items-center justify-center rounded-full border bg-background/60 backdrop-blur-sm shadow-sm transition-colors hover:bg-muted/80">
+          <GripVerticalIcon className="size-3 text-muted-foreground/70 transition-transform" />
         </div>
       )}
     </Separator>

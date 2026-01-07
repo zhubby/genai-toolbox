@@ -18,6 +18,9 @@ type DbManagerState = {
   toolsLoading: boolean
   toolsError: string | null
   reloadTools: () => Promise<void>
+  selectedToolName: string | null
+  selectedTool: ToolItem | null
+  selectTool: (toolName: string | null) => void
   preview: PreviewState
   setPreview: (next: PreviewState) => void
 }
@@ -31,6 +34,7 @@ export function DbManagerProvider({ children }: { children: React.ReactNode }) {
   const [tools, setTools] = React.useState<ToolItem[]>([])
   const [toolsLoading, setToolsLoading] = React.useState(false)
   const [toolsError, setToolsError] = React.useState<string | null>(null)
+  const [selectedToolName, setSelectedToolName] = React.useState<string | null>(null)
   const [preview, setPreview] = React.useState<PreviewState>({ status: "idle", data: null, error: null })
 
   // 仅持久化 name（source 详情由 Sidebar 点击时补齐）
@@ -57,6 +61,7 @@ export function DbManagerProvider({ children }: { children: React.ReactNode }) {
     if (!sourceName) {
       setTools([])
       setToolsError(null)
+      setSelectedToolName(null)
       return
     }
     setToolsLoading(true)
@@ -76,18 +81,37 @@ export function DbManagerProvider({ children }: { children: React.ReactNode }) {
     void reloadTools()
   }, [reloadTools])
 
+  const selectedTool = React.useMemo(() => {
+    if (!selectedToolName) return null
+    return tools.find((t) => t.name === selectedToolName) || null
+  }, [tools, selectedToolName])
+
+  // 如果 tools 列表变化导致当前选中项不存在，则清空选中
+  React.useEffect(() => {
+    if (selectedToolName && !selectedTool) setSelectedToolName(null)
+  }, [selectedToolName, selectedTool])
+
+  const selectSource = React.useCallback((next: SelectedSource | null) => {
+    setSelectedSource(next)
+    // 切换 source 时清空选中 tool，避免跨 source 误加载
+    setSelectedToolName(null)
+  }, [])
+
   const value = React.useMemo<DbManagerState>(
     () => ({
       selectedSource,
-      selectSource: setSelectedSource,
+      selectSource,
       tools,
       toolsLoading,
       toolsError,
       reloadTools,
+      selectedToolName,
+      selectedTool,
+      selectTool: setSelectedToolName,
       preview,
       setPreview,
     }),
-    [selectedSource, tools, toolsLoading, toolsError, reloadTools, preview],
+    [selectedSource, selectSource, tools, toolsLoading, toolsError, reloadTools, selectedToolName, selectedTool, preview],
   )
 
   return <DbManagerContext.Provider value={value}>{children}</DbManagerContext.Provider>
