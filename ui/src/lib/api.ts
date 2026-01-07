@@ -21,6 +21,29 @@ export type ToolItem = {
 }
 
 const BASE = "/tb-api/api/config";
+const SQL_BASE = "/tb-api/api/sql";
+
+export type ExecuteSQLResponse = {
+  columns: string[]
+  rows: any[][]
+  rowCount: number
+  durationMs: number
+}
+
+export async function executeSQL(body: {
+  source: string
+  statement: string
+  parameters?: any[] | Record<string, any>
+  readOnly?: boolean
+}): Promise<ExecuteSQLResponse> {
+  const res = await fetch(`${SQL_BASE}/execute`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(`executeSQL failed: ${res.status}`)
+  return res.json()
+}
 
 export async function listSources(): Promise<SourceItem[]> {
   const res = await fetch(`${BASE}/sources/`, { cache: "no-store" });

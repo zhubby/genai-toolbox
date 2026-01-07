@@ -593,7 +593,21 @@ func handleDynamicReload(ctx context.Context, toolsFile ToolsFile, s *server.Ser
 		return err
 	}
 
-	s.ResourceMgr.SetResources(sourcesMap, authServicesMap, toolsMap, toolsetsMap, promptsMap, promptsetsMap)
+	// Only the in-memory resource manager supports in-place updates for folder watching.
+	// DB-backed ResourceManager reads configs on demand so it doesn't require (or support) SetResources.
+	type resourceSetter interface {
+		SetResources(
+			map[string]sources.Source,
+			map[string]auth.AuthService,
+			map[string]tools.Tool,
+			map[string]tools.Toolset,
+			map[string]prompts.Prompt,
+			map[string]prompts.Promptset,
+		)
+	}
+	if rs, ok := any(s.ResourceMgr).(resourceSetter); ok {
+		rs.SetResources(sourcesMap, authServicesMap, toolsMap, toolsetsMap, promptsMap, promptsetsMap)
+	}
 
 	return nil
 }
@@ -1089,6 +1103,16 @@ func run(cmd *Command) error {
 				return errMsg
 			}
 			cmd.cfg.AuthServiceConfigs[k] = v
+		}
+	}
+
+	// Persist the final merged configuration into the config DB so the runtime
+	// ResourceManagerForDB can serve it consistently (no folder watching / no in-memory snapshot).
+	if cmd.cfg.ConfigDBPath != "" && mergedConfig != nil {
+		if err := saveMergedConfigToDB(ctx, cmd.cfg.ConfigDBPath, mergedConfig); err != nil {
+			errMsg := fmt.Errorf("failed to persist merged configuration to database at %q: %w", cmd.cfg.ConfigDBPath, err)
+			cmd.logger.ErrorContext(ctx, errMsg.Error())
+			return errMsg
 		}
 	}
 

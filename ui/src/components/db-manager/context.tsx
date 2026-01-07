@@ -1,9 +1,15 @@
 "use client"
 
 import * as React from "react"
-import { listTools, type SourceItem, type ToolItem } from "@/lib/api"
+import { listTools, type ExecuteSQLResponse, type SourceItem, type ToolItem } from "@/lib/api"
 
 export type SelectedSource = Pick<SourceItem, "name" | "kind" | "config">
+
+export type PreviewState =
+  | { status: "idle"; data: null; error: null }
+  | { status: "running"; data: ExecuteSQLResponse | null; error: null }
+  | { status: "success"; data: ExecuteSQLResponse; error: null }
+  | { status: "error"; data: ExecuteSQLResponse | null; error: string }
 
 type DbManagerState = {
   selectedSource: SelectedSource | null
@@ -12,6 +18,8 @@ type DbManagerState = {
   toolsLoading: boolean
   toolsError: string | null
   reloadTools: () => Promise<void>
+  preview: PreviewState
+  setPreview: (next: PreviewState) => void
 }
 
 const DbManagerContext = React.createContext<DbManagerState | null>(null)
@@ -23,6 +31,7 @@ export function DbManagerProvider({ children }: { children: React.ReactNode }) {
   const [tools, setTools] = React.useState<ToolItem[]>([])
   const [toolsLoading, setToolsLoading] = React.useState(false)
   const [toolsError, setToolsError] = React.useState<string | null>(null)
+  const [preview, setPreview] = React.useState<PreviewState>({ status: "idle", data: null, error: null })
 
   // 仅持久化 name（source 详情由 Sidebar 点击时补齐）
   React.useEffect(() => {
@@ -75,8 +84,10 @@ export function DbManagerProvider({ children }: { children: React.ReactNode }) {
       toolsLoading,
       toolsError,
       reloadTools,
+      preview,
+      setPreview,
     }),
-    [selectedSource, tools, toolsLoading, toolsError, reloadTools],
+    [selectedSource, tools, toolsLoading, toolsError, reloadTools, preview],
   )
 
   return <DbManagerContext.Provider value={value}>{children}</DbManagerContext.Provider>

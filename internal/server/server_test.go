@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -28,6 +29,7 @@ import (
 	"github.com/googleapis/genai-toolbox/internal/log"
 	"github.com/googleapis/genai-toolbox/internal/prompts"
 	"github.com/googleapis/genai-toolbox/internal/server"
+	"github.com/googleapis/genai-toolbox/internal/server/resources"
 	"github.com/googleapis/genai-toolbox/internal/sources"
 	"github.com/googleapis/genai-toolbox/internal/sources/alloydbpg"
 	"github.com/googleapis/genai-toolbox/internal/telemetry"
@@ -40,7 +42,8 @@ func TestServe(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	addr, port := "127.0.0.1", 5000
+	// Use a free port to avoid flakes when 5000 is in use locally.
+	addr, port := "127.0.0.1", mustGetFreePort(t)
 	cfg := server.ServerConfig{
 		Version: "0.0.0",
 		Address: addr,
@@ -116,7 +119,8 @@ func TestUpdateServer(t *testing.T) {
 		t.Fatalf("error setting up logger: %s", err)
 	}
 
-	addr, port := "127.0.0.1", 5000
+	// Use a free port to avoid flakes when 5000 is in use locally.
+	addr, port := "127.0.0.1", mustGetFreePort(t)
 	cfg := server.ServerConfig{
 		Version: "0.0.0",
 		Address: addr,
@@ -162,7 +166,9 @@ func TestUpdateServer(t *testing.T) {
 			Prompts: []*prompts.Prompt{},
 		},
 	}
-	s.ResourceMgr.SetResources(newSources, newAuth, newTools, newToolsets, newPrompts, newPromptsets)
+	rm := resources.NewResourceManager(nil, nil, nil, nil, nil, nil)
+	rm.SetResources(newSources, newAuth, newTools, newToolsets, newPrompts, newPromptsets)
+	s.ResourceMgr = rm
 	if err != nil {
 		t.Errorf("error updating server: %s", err)
 	}
@@ -196,4 +202,18 @@ func TestUpdateServer(t *testing.T) {
 	if diff := cmp.Diff(gotPromptset, newPromptsets["example-promptset"]); diff != "" {
 		t.Errorf("error updating server, promptset (-want +got):\n%s", diff)
 	}
+}
+
+func mustGetFreePort(t *testing.T) int {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen for free port: %v", err)
+	}
+	defer ln.Close()
+	addr, ok := ln.Addr().(*net.TCPAddr)
+	if !ok {
+		t.Fatalf("unexpected listener addr type: %T", ln.Addr())
+	}
+	return addr.Port
 }

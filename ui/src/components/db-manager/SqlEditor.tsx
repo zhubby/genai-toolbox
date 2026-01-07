@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 import { useDbManager } from "./context"
-import { createTool, updateTool } from "@/lib/api"
+import { createTool, executeSQL, updateTool } from "@/lib/api"
 
 interface SqlEditorProps {
   className?: string
@@ -23,6 +23,7 @@ type ParamDef = {
   description: string
   required?: boolean
   default?: any
+  value?: string
 }
 
 function isCommentOrStringScope(scope: string): boolean {
@@ -74,6 +75,7 @@ export function SqlEditor({ className }: SqlEditorProps) {
   const [isRunning, setIsRunning] = React.useState(false)
   const [isSaving, setIsSaving] = React.useState(false)
   const [saveError, setSaveError] = React.useState<string | null>(null)
+  const [runError, setRunError] = React.useState<string | null>(null)
   const [monaco, setMonaco] = React.useState<any>(null)
 
   const [toolName, setToolName] = React.useState("")
@@ -82,7 +84,7 @@ export function SqlEditor({ className }: SqlEditorProps) {
   const [parsedParamMax, setParsedParamMax] = React.useState(0)
   const [parseError, setParseError] = React.useState<string | null>(null)
 
-  const { selectedSource, reloadTools } = useDbManager()
+  const { selectedSource, reloadTools, setPreview } = useDbManager()
 
   const dbName = typeof selectedSource?.config?.database === "string" ? selectedSource?.config?.database : ""
   const connLabel = selectedSource?.name ? `${selectedSource.name}${dbName ? ` / ${dbName}` : ""}` : "未选择数据库"
@@ -100,9 +102,80 @@ export function SqlEditor({ className }: SqlEditorProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSource?.name])
 
-  const handleRun = () => {
+  function parseParamValue(p: ParamDef): any {
+    const raw = (p.value ?? "").trim()
+    switch (p.type) {
+      case "string":
+        return raw
+      case "integer":
+        if (!raw) return null
+        if (!/^-?\d+$/.test(raw)) throw new Error(`参数 ${p.name} 不是合法整数`)
+        return Number.parseInt(raw, 10)
+      case "float":
+        if (!raw) return null
+        if (Number.isNaN(Number(raw))) throw new Error(`参数 ${p.name} 不是合法数字`)
+        return Number.parseFloat(raw)
+      case "boolean":
+        if (!raw) return null
+        if (raw !== "true" && raw !== "false") throw new Error(`参数 ${p.name} 只能为 true/false`)
+        return raw === "true"
+      case "array":
+      case "map":
+        if (!raw) return p.type === "array" ? [] : {}
+        try {
+          return JSON.parse(raw)
+        } catch {
+          throw new Error(`参数 ${p.name} 不是合法 JSON`)
+        }
+      default:
+        return raw
+    }
+  }
+
+  const handleRun = async () => {
+    setRunError(null)
+    setSaveError(null)
+
+    if (!selectedSource?.name) {
+      setRunError("请先选择一个数据库 source")
+      setPreview({ status: "idle", data: null, error: null })
+      return
+    }
+    const sql = statement.trim()
+    if (!sql) {
+      setPreview({ status: "idle", data: null, error: null })
+      return
+    }
+
+    // Only send parameters when we've parsed a contiguous $1..$N set.
+    let paramValues: any[] = []
+    try {
+      const max = postgresParamInfo.max
+      if (max > 0 && parsedParamMax === max && parameters.length === max) {
+        paramValues = parameters.map(parseParamValue)
+      }
+    } catch (e: any) {
+      setRunError(e?.message || String(e))
+      setPreview({ status: "error", data: null, error: e?.message || String(e) })
+      return
+    }
+
     setIsRunning(true)
-    setTimeout(() => setIsRunning(false), 800)
+    setPreview({ status: "running", data: null, error: null })
+    try {
+      const res = await executeSQL({
+        source: selectedSource.name,
+        statement: sql,
+        parameters: paramValues,
+      })
+      setPreview({ status: "success", data: res, error: null })
+    } catch (e: any) {
+      const msg = e?.message || String(e)
+      setRunError(msg)
+      setPreview({ status: "error", data: null, error: msg })
+    } finally {
+      setIsRunning(false)
+    }
   }
 
   const postgresParamInfo = React.useMemo(() => extractPostgresParamMaxIndex(statement, monaco), [statement, monaco])
@@ -327,6 +400,7 @@ export function SqlEditor({ className }: SqlEditorProps) {
       <div className="border-t bg-muted/5 p-3 space-y-3 overflow-auto max-h-[260px]">
         {saveError && <div className="text-xs text-red-600">{saveError}</div>}
         {parseError && <div className="text-xs text-red-600">{parseError}</div>}
+        {runError && <div className="text-xs text-red-600">{runError}</div>}
 
         <div className="grid grid-cols-6 gap-2 items-center">
           <div className="col-span-2 text-xs text-muted-foreground">Tool name</div>
@@ -374,7 +448,7 @@ export function SqlEditor({ className }: SqlEditorProps) {
               {Array.from({ length: parsedParamMax }, (_, idx) => {
                 const p = parameters[idx]
                 return (
-                  <div key={idx} className="grid grid-cols-12 gap-2 items-center">
+                  <div key={idx} className="grid grid-cols-14 gap-2 items-center">
                     <div className="col-span-2 text-xs font-mono text-muted-foreground">{`$${idx + 1}`}</div>
                     <div className="col-span-3">
                       <Input
@@ -405,7 +479,17 @@ export function SqlEditor({ className }: SqlEditorProps) {
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="col-span-4">
+                    <div className="col-span-3">
+                      <Input
+                        value={p?.value || ""}
+                        onChange={(e) =>
+                          setParameters((cur) => cur.map((x, i) => (i === idx ? { ...x, value: e.target.value } : x)))
+                        }
+                        placeholder={p?.type === "map" || p?.type === "array" ? "JSON value" : "value"}
+                        className="h-8 text-xs font-mono"
+                      />
+                    </div>
+                    <div className="col-span-3">
                       <Input
                         value={p?.description || ""}
                         onChange={(e) =>

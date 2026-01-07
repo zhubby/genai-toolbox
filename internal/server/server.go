@@ -34,6 +34,7 @@ import (
 	"github.com/googleapis/genai-toolbox/internal/prompts"
 	"github.com/googleapis/genai-toolbox/internal/server/resources"
 	"github.com/googleapis/genai-toolbox/internal/sources"
+	"github.com/googleapis/genai-toolbox/internal/storage"
 	"github.com/googleapis/genai-toolbox/internal/telemetry"
 	"github.com/googleapis/genai-toolbox/internal/tools"
 	"github.com/googleapis/genai-toolbox/internal/util"
@@ -50,7 +51,7 @@ type Server struct {
 	logger          log.Logger
 	instrumentation *telemetry.Instrumentation
 	sseManager      *sseManager
-	ResourceMgr     *resources.ResourceManager
+	ResourceMgr     resources.Manager
 	configDBPath    string
 }
 
@@ -321,9 +322,13 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*Server, error) {
 	httpLogger := httplog.NewLogger("httplog", httpOpts)
 	r.Use(httplog.RequestLogger(httpLogger))
 
-	sourcesMap, authServicesMap, toolsMap, toolsetsMap, promptsMap, promptsetsMap, err := InitializeConfigs(ctx, cfg)
-	if err != nil {
-		return nil, fmt.Errorf("unable to initialize configs: %w", err)
+	// Validate that the config DB is usable early (if configured). ResourceManagerForDB
+	// will load and initialize resources on demand.
+	if cfg.ConfigDBPath != "" {
+		_, err := storage.Open(ctx, cfg.ConfigDBPath)
+		if err != nil {
+			return nil, fmt.Errorf("unable to open config db at %q: %w", cfg.ConfigDBPath, err)
+		}
 	}
 
 	addr := net.JoinHostPort(cfg.Address, strconv.Itoa(cfg.Port))
@@ -331,7 +336,11 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*Server, error) {
 
 	sseManager := newSseManager(ctx)
 
-	resourceManager := resources.NewResourceManager(sourcesMap, authServicesMap, toolsMap, toolsetsMap, promptsMap, promptsetsMap)
+	// NOTE: runtime ResourceManager is swappable; we will initialize it below.
+	// Default to in-memory snapshot for now; may be overridden.
+	// Use DB-backed resource manager so runtime always reflects config changes made via /api/config.
+	// This avoids folder watching and avoids keeping long-lived initialized resources in memory.
+	resourceManager := resources.NewResourceManagerForDB(cfg.ConfigDBPath, instrumentation.Tracer, cfg.Version)
 
 	s := &Server{
 		version:         cfg.Version,

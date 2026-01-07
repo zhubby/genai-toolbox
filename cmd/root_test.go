@@ -2065,7 +2065,10 @@ authSources:
 			ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 			defer cancel()
 
-			cmd, output, err := invokeCommandWithContext(ctx, tc.args)
+			// Use an ephemeral port to avoid flakes when 5000 is in use locally.
+			args := append([]string{}, tc.args...)
+			args = append(args, "--port", "0")
+			cmd, output, err := invokeCommandWithContext(ctx, args)
 
 			if tc.wantErr {
 				if err == nil {
@@ -2100,10 +2103,9 @@ func TestDefaultToolsFileBehavior(t *testing.T) {
 		errString string
 	}{
 		{
-			desc:      "no flags (defaults to tools.yaml)",
+			desc:      "no flags (defaults to SQLite config DB mode)",
 			args:      []string{},
-			expectRun: false,
-			errString: "tools.yaml", // Expect error because tools.yaml doesn't exist in test env
+			expectRun: true,
 		},
 		{
 			desc:      "prebuilt only (skips tools.yaml)",
@@ -2116,7 +2118,10 @@ func TestDefaultToolsFileBehavior(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 			defer cancel()
-			_, output, err := invokeCommandWithContext(ctx, tc.args)
+			// Use an ephemeral port to avoid flakes when 5000 is in use locally.
+			args := append([]string{}, tc.args...)
+			args = append(args, "--port", "0")
+			_, output, err := invokeCommandWithContext(ctx, args)
 
 			if tc.expectRun {
 				if err != nil && err != context.DeadlineExceeded && err != context.Canceled {

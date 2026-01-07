@@ -54,6 +54,10 @@ func apiRouter(s *Server) (chi.Router, error) {
 		r.Post("/invoke", func(w http.ResponseWriter, r *http.Request) { toolInvokeHandler(s, w, r) })
 	})
 
+	r.Route("/sql", func(r chi.Router) {
+		r.Post("/execute", func(w http.ResponseWriter, r *http.Request) { sqlExecuteHandler(s, w, r) })
+	})
+
 	return r, nil
 }
 
