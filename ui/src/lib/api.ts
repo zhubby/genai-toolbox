@@ -76,3 +76,31 @@ export async function listTools(): Promise<ToolItem[]> {
   if (!res.ok) throw new Error(`listTools failed: ${res.status}`)
   return res.json()
 }
+
+export async function createTool(body: {
+  name: string
+  kind: string
+  sourceName?: string | null
+  config?: Record<string, any>
+}): Promise<ToolItem> {
+  const res = await fetch(`${BASE}/tools/`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(`createTool failed: ${res.status}`)
+  return res.json()
+}
+
+export async function updateTool(
+  name: string,
+  body: { kind: string; sourceName?: string | null; config?: Record<string, any> },
+): Promise<ToolItem> {
+  const res = await fetch(`${BASE}/tools/${encodeURIComponent(name)}/`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(`updateTool failed: ${res.status}`)
+  return res.json()
+}

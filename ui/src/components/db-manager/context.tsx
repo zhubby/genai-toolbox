@@ -11,6 +11,7 @@ type DbManagerState = {
   tools: ToolItem[]
   toolsLoading: boolean
   toolsError: string | null
+  reloadTools: () => Promise<void>
 }
 
 const DbManagerContext = React.createContext<DbManagerState | null>(null)
@@ -42,32 +43,29 @@ export function DbManagerProvider({ children }: { children: React.ReactNode }) {
     }
   }, [selectedSource?.name])
 
-  React.useEffect(() => {
-    let cancelled = false
-    async function run() {
-      const sourceName = selectedSource?.name
-      if (!sourceName) {
-        setTools([])
-        setToolsError(null)
-        return
-      }
-      setToolsLoading(true)
+  const reloadTools = React.useCallback(async () => {
+    const sourceName = selectedSource?.name
+    if (!sourceName) {
+      setTools([])
       setToolsError(null)
-      try {
-        const all = await listTools()
-        const filtered = all.filter((t) => t.sourceName === sourceName)
-        if (!cancelled) setTools(filtered)
-      } catch (e: any) {
-        if (!cancelled) setToolsError(e?.message || String(e))
-      } finally {
-        if (!cancelled) setToolsLoading(false)
-      }
+      return
     }
-    run()
-    return () => {
-      cancelled = true
+    setToolsLoading(true)
+    setToolsError(null)
+    try {
+      const all = await listTools()
+      const filtered = all.filter((t) => t.sourceName === sourceName)
+      setTools(filtered)
+    } catch (e: any) {
+      setToolsError(e?.message || String(e))
+    } finally {
+      setToolsLoading(false)
     }
   }, [selectedSource?.name])
+
+  React.useEffect(() => {
+    void reloadTools()
+  }, [reloadTools])
 
   const value = React.useMemo<DbManagerState>(
     () => ({
@@ -76,8 +74,9 @@ export function DbManagerProvider({ children }: { children: React.ReactNode }) {
       tools,
       toolsLoading,
       toolsError,
+      reloadTools,
     }),
-    [selectedSource, tools, toolsLoading, toolsError],
+    [selectedSource, tools, toolsLoading, toolsError, reloadTools],
   )
 
   return <DbManagerContext.Provider value={value}>{children}</DbManagerContext.Provider>
